@@ -1,10 +1,10 @@
-Diabetes Risk Decision Support System
+# Diabetes Risk Decision Support System
 
-Overview
+# Overview
 
 This project was developed for BC Analytics, a health-tech startup aiming to improve patient outcomes through data-driven healthcare solutions. The goal is to identify patients at risk of diabetes early and support healthcare providers with actionable insights.
 
-Objectives
+# Objectives
 
 The project aims to:
 
@@ -25,7 +25,7 @@ Data cleaning, feature selection, encoding, and scaling were performed before mo
 
 4. Modeling
 
-Risk Classification:
+# Risk Classification:
 
 Decision Tree
 Random Forest
@@ -35,11 +35,11 @@ Patient Segmentation:
 
 K-Means Clustering (k = 3)
 
-Key Driver Analysis:
+# Key Driver Analysis:
 
 SHAP (Shapley Additive Explanations)
 Web Application
 
 An interactive DASH dashboard was developed to display predictions, lifestyle insights, and recommendations for healthcare providers.
 
-Deployment: Render
+# Deployment: Render
