@@ -24,6 +24,9 @@ The Diabetes_and_Lifestyle_Dataset contains health and lifestyle variables used 
 Data cleaning, feature selection, encoding, and scaling were performed before modelling.
 
 4. Modeling
+Two models were implemented, namely:
+    Random Forest (primary model)
+    Decision Tree (comparison model)
 
 # Risk Classification:
 
