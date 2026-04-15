@@ -197,16 +197,20 @@ MODAL_PANEL = {
     "boxShadow": "0 8px 32px rgba(0,0,0,0.25)",
 }
 
-modelBundle = joblib.load("ARTIFACTS/DiabetesRFModel.pkl")
-model = modelBundle["model"]
-featureColumns = modelBundle["featureColumns"]
-categoricalColumns = list(modelBundle["categoricalColumns"])
-categoryMaps = modelBundle["categoryMaps"]
-targetMap = list(modelBundle["targetMap"])
-worstStageIndex = int(modelBundle.get("worstStageIndex", len(targetMap) - 1))
-shapBackground = modelBundle.get("shapBackground")
-sliderBounds = dict(modelBundle.get("sliderBounds") or {})
-featureQuantiles = dict(modelBundle.get("featureQuantiles") or {})
+rfModelBundle = joblib.load("ARTIFACTS/Diabetes_rfModel.pkl")
+model = rfModelBundle["model"]
+
+dataModelBundle =joblib.load("ARTIFACTS/DataModel.pkl")
+featureColumns = dataModelBundle["featureColumns"]
+categoricalColumns = list(dataModelBundle["categoricalColumns"])
+categoryMaps = dataModelBundle["categoryMaps"]
+targetMap = list(dataModelBundle["targetMap"])
+
+uiModelBundle =joblib.load("ARTIFACTS/UIModel.pkl")
+worstStageIndex = int(uiModelBundle.get("worstStageIndex", len(targetMap) - 1))
+shapBackground = uiModelBundle.get("shapBackground")
+sliderBounds = dict(uiModelBundle.get("sliderBounds") or {})
+featureQuantiles = dict(uiModelBundle.get("featureQuantiles") or {})
 
 df = pd.read_csv("DATA/Diabetes_and_LifeStyle_Dataset.csv")
 df.columns = df.columns.str.strip()
