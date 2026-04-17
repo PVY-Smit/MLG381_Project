@@ -1034,7 +1034,43 @@ if BMI_COL:
 
 def shap_top_features(input_frame: pd.DataFrame, k: int = 3):
     if not _ENABLE_SHAP:
-        return None, []
+        # Low-memory fallback: approximate "drivers" from model feature importance
+        # weighted by how far the current input is from training median.
+        try:
+            importances = np.asarray(getattr(model, "feature_importances_", []), dtype=np.float64)
+        except Exception:
+            importances = np.array([], dtype=np.float64)
+        if importances.size != len(featureColumns):
+            return None, []
+
+        scores = np.zeros(len(featureColumns), dtype=np.float64)
+        row = input_frame.iloc[0]
+        for i, col in enumerate(featureColumns):
+            q = featureQuantiles.get(col)
+            if not q:
+                continue
+            try:
+                value = float(row[col])
+                p50 = float(q.get("p50", value))
+                p25 = float(q.get("p25", p50))
+                p75 = float(q.get("p75", p50))
+            except (TypeError, ValueError):
+                continue
+            scale = max(abs(p75 - p25), 1e-6)
+            z = abs(value - p50) / scale
+            scores[i] = float(importances[i]) * z
+
+        order = np.argsort(-scores)
+        top = [featureColumns[int(idx)] for idx in order if scores[int(idx)] > 0][:k]
+        if len(top) < k:
+            for idx in np.argsort(-importances):
+                name = featureColumns[int(idx)]
+                if name in top:
+                    continue
+                top.append(name)
+                if len(top) >= k:
+                    break
+        return scores, top[:k]
     explainer = get_explainer()
     if explainer is None:
         return None, []
@@ -1204,17 +1240,11 @@ def on_predict(n_clicks, *values):
         )
 
     if shap_failed:
-        if not _ENABLE_SHAP:
-            shap_msg = (
-                "Detailed drivers are turned off in this deployment "
-                "(ENABLE_SHAP=false) to improve reliability on low-memory hosting."
-            )
-        else:
-            shap_msg = (
-                "Detailed drivers are unavailable. Rebuild artifacts by running "
-                "`python SRC/prepare_data.py && python SRC/train.py` so the "
-                "bundle includes SHAP background data."
-            )
+        shap_msg = (
+            "Detailed drivers are temporarily unavailable. "
+            "If this persists, verify artifacts were rebuilt with "
+            "`python SRC/prepare_data.py && python SRC/train.py`."
+        )
         body_children.append(
             html.P(
                 shap_msg,
