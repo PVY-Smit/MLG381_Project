@@ -1204,10 +1204,20 @@ def on_predict(n_clicks, *values):
         )
 
     if shap_failed:
+        if not _ENABLE_SHAP:
+            shap_msg = (
+                "Detailed drivers are turned off in this deployment "
+                "(ENABLE_SHAP=false) to improve reliability on low-memory hosting."
+            )
+        else:
+            shap_msg = (
+                "Detailed drivers are unavailable. Rebuild artifacts by running "
+                "`python SRC/prepare_data.py && python SRC/train.py` so the "
+                "bundle includes SHAP background data."
+            )
         body_children.append(
             html.P(
-                "Detailed drivers are unavailable. Retrain with the latest "
-                "`diabetesModel.py` so the bundle includes SHAP background data.",
+                shap_msg,
                 style={"color": "#b71c1c"},
             )
         )
