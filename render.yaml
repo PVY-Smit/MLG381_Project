@@ -6,7 +6,8 @@ services:
     runtime: python
     # Requires DATA/Diabetes_and_LifeStyle_Dataset.csv in the repo (or adjust to download data).
     buildCommand: pip install -r requirements.txt && python SRC/prepare_data.py && python SRC/train.py
-    startCommand: gunicorn wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4
+    # Free tier (~512MB RAM): use 1 worker — each worker loads the full model in memory.
+    startCommand: gunicorn wsgi:application --bind 0.0.0.0:$PORT --workers 1 --threads 2 --timeout 120
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.9"

@@ -129,6 +129,7 @@ def build_feature_quantiles(series: pd.Series) -> dict:
     return {
         "p1": float(series.quantile(0.01)),
         "p25": float(series.quantile(0.25)),
+        "p50": float(series.quantile(0.50)),
         "p75": float(series.quantile(0.75)),
         "p99": float(series.quantile(0.99)),
     }

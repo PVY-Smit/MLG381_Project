@@ -22,7 +22,7 @@ y_test=pd.read_csv(_DATA_DIR / "y_test.csv")
 y_train=pd.read_csv(_DATA_DIR / "y_train.csv")
 
 # Random Forest
-rfModel = RandomForestClassifier(random_state=42)
+rfModel = RandomForestClassifier(random_state=42, n_jobs=1)
 rfModel.fit(X_train, y_train)
 rfPred = rfModel.predict(X_test)
 rfAccuracy = accuracy_score(y_test, rfPred)

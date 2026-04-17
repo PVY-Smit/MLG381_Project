@@ -202,9 +202,11 @@ MODAL_PANEL = {
 # Repo root (parent of SRC/) so ARTIFACTS/DATA resolve on Render regardless of process cwd.
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
-_DATA_DIR = _REPO_ROOT / "DATA"
 
-rfModelBundle = joblib.load(_ARTIFACTS_DIR / "Diabetes_rfModel.pkl")
+try:
+    rfModelBundle = joblib.load(_ARTIFACTS_DIR / "Diabetes_rfModel.pkl", mmap_mode="r")
+except Exception:
+    rfModelBundle = joblib.load(_ARTIFACTS_DIR / "Diabetes_rfModel.pkl")
 model = rfModelBundle["model"]
 
 dataModelBundle =joblib.load(_ARTIFACTS_DIR / "DataModel.pkl")
@@ -219,26 +221,17 @@ shapBackground = uiModelBundle.get("shapBackground")
 sliderBounds = dict(uiModelBundle.get("sliderBounds") or {})
 featureQuantiles = dict(uiModelBundle.get("featureQuantiles") or {})
 
-df = pd.read_csv(_DATA_DIR / "Diabetes_and_LifeStyle_Dataset.csv")
-df.columns = df.columns.str.strip()
 
-for col in featureColumns:
-    if col not in categoricalColumns and col not in sliderBounds and col in df.columns:
-        s = pd.to_numeric(df[col], errors="coerce").dropna()
-        if len(s):
-            sliderBounds[col] = {
-                "min": float(s.min()),
-                "max": float(s.max()),
-            }
-    if col not in categoricalColumns and col not in featureQuantiles and col in df.columns:
-        s = pd.to_numeric(df[col], errors="coerce").dropna()
-        if len(s):
-            featureQuantiles[col] = {
-                "p1": float(s.quantile(0.01)),
-                "p25": float(s.quantile(0.25)),
-                "p75": float(s.quantile(0.75)),
-                "p99": float(s.quantile(0.99)),
-            }
+def _numeric_median_default(col: str, lo: float, hi: float) -> float:
+    """Median for slider defaults from training quantiles (avoids loading full CSV at import)."""
+    q = featureQuantiles.get(col)
+    if q and "p50" in q:
+        try:
+            return float(q["p50"])
+        except (TypeError, ValueError):
+            pass
+    return float(lo + hi) / 2.0
+
 
 # UI bounds (extra changes; also applied in diabetesModel for new bundles)
 sliderBounds["diet_score"] = {"min": 0.0, "max": 100.0}
@@ -374,7 +367,9 @@ def build_field(col: str) -> html.Div:
             style={"width": "100%"},
         )
     elif is_binary_numeric_column(col):
-        raw_bin = df[col].median() if col in df.columns else 0
+        bounds = sliderBounds.get(col, {"min": 0.0, "max": 1.0})
+        lo_b, hi_b = float(bounds["min"]), float(bounds["max"])
+        raw_bin = _numeric_median_default(col, lo_b, hi_b)
         try:
             bin_v = int(round(float(raw_bin)))
         except (TypeError, ValueError):
@@ -394,7 +389,7 @@ def build_field(col: str) -> html.Div:
     elif k == "bmi":
         bounds = sliderBounds.get(col, {"min": 19.0, "max": 54.0})
         lo, hi = float(bounds["min"]), float(bounds["max"])
-        raw_med = df[col].median() if col in df.columns else (lo + hi) / 2
+        raw_med = _numeric_median_default(col, lo, hi)
         try:
             med = float(raw_med)
         except (TypeError, ValueError):
@@ -520,7 +515,7 @@ def build_field(col: str) -> html.Div:
     else:
         bounds = sliderBounds.get(col, {"min": 0.0, "max": 100.0})
         lo, hi = float(bounds["min"]), float(bounds["max"])
-        raw_med = df[col].median() if col in df.columns else (lo + hi) / 2
+        raw_med = _numeric_median_default(col, lo, hi)
         try:
             med = float(raw_med)
         except (TypeError, ValueError):
@@ -680,46 +675,48 @@ _decision_support_children = [
             "fontWeight": "bold",
         },
     ),
-    html.Div(
-        id="modalBackdrop",
-        style={**MODAL_BACKDROP_BASE, "display": "none"},
-        children=[
-            html.Div(
-                style=MODAL_PANEL,
-                children=[
-                    html.Div(
-                        style={
-                            "display": "flex",
-                            "justifyContent": "space-between",
-                            "alignItems": "center",
-                            "marginBottom": "16px",
-                        },
-                        children=[
-                            html.H3(
-                                "Results",
-                                style={"margin": 0, "fontSize": "20px"},
-                            ),
-                            html.Button(
-                                "Close",
-                                id="modalClose",
-                                n_clicks=0,
-                                style={
-                                    "padding": "8px 16px",
-                                    "border": "1px solid #333",
-                                    "background": "#fff",
-                                    "cursor": "pointer",
-                                    "borderRadius": "0",
-                                    "fontWeight": "600",
-                                },
-                            ),
-                        ],
-                    ),
-                    html.Div(id="resultsModalBody"),
-                ],
-            )
-        ],
-    ),
 ]
+
+# Modal lives outside dcc.Tabs so it stays mounted and callbacks work when switching tabs.
+_modal_layer = html.Div(
+    id="modalBackdrop",
+    style={**MODAL_BACKDROP_BASE, "display": "none"},
+    children=[
+        html.Div(
+            style=MODAL_PANEL,
+            children=[
+                html.Div(
+                    style={
+                        "display": "flex",
+                        "justifyContent": "space-between",
+                        "alignItems": "center",
+                        "marginBottom": "16px",
+                    },
+                    children=[
+                        html.H3(
+                            "Results",
+                            style={"margin": 0, "fontSize": "20px"},
+                        ),
+                        html.Button(
+                            "Close",
+                            id="modalClose",
+                            n_clicks=0,
+                            style={
+                                "padding": "8px 16px",
+                                "border": "1px solid #333",
+                                "background": "#fff",
+                                "cursor": "pointer",
+                                "borderRadius": "0",
+                                "fontWeight": "600",
+                            },
+                        ),
+                    ],
+                ),
+                html.Div(id="resultsModalBody"),
+            ],
+        )
+    ],
+)
 
 _gallery_items = _notebook_gallery_items()
 _notebook_gallery_children: list = [
@@ -823,6 +820,7 @@ dash_app.layout = html.Div(
                 ),
             ],
         ),
+        _modal_layer,
             ],
         ),
     ],
@@ -1119,13 +1117,25 @@ def weakest_healthy_feature(input_data: dict):
 )
 def on_predict(n_clicks, *values):
     hidden = {**MODAL_BACKDROP_BASE, "display": "none"}
-    if not n_clicks:
-        return hidden, ""
+    if n_clicks is None or n_clicks == 0:
+        return hidden, None
 
-    input_frame = collect_input_frame(values)
-    input_dict = input_frame.iloc[0].to_dict()
-    pred_code = int(model.predict(input_frame)[0])
-    pred_label = targetMap[pred_code]
+    try:
+        input_frame = collect_input_frame(values)
+        input_dict = input_frame.iloc[0].to_dict()
+        pred_code = int(model.predict(input_frame)[0])
+        pred_label = targetMap[pred_code]
+    except Exception as exc:
+        err_visible = {**MODAL_BACKDROP_BASE, "display": "flex"}
+        return err_visible, html.Div(
+            [
+                html.P(
+                    "Prediction could not be completed. Check inputs and try again.",
+                    style={"color": "#b71c1c", "marginBottom": "8px"},
+                ),
+                html.P(str(exc), style={"fontSize": "12px", "color": "#555"}),
+            ]
+        )
     proba = None
     try:
         proba_row = model.predict_proba(input_frame)[0]
