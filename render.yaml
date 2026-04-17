@@ -1,0 +1,12 @@
+# Render.com: New Web Service → Connect this GitHub repo → Render reads this file (optional).
+# GitHub only stores code; Render builds and runs the app.
+services:
+  - type: web
+    name: diabetes-risk-dash
+    runtime: python
+    # Requires DATA/Diabetes_and_LifeStyle_Dataset.csv in the repo (or adjust to download data).
+    buildCommand: pip install -r requirements.txt && python SRC/prepare_data.py && python SRC/train.py
+    startCommand: gunicorn wsgi:application --bind 0.0.0.0:$PORT --workers 2 --threads 4
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"

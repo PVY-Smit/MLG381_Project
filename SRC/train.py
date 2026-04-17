@@ -1,3 +1,5 @@
+import os
+
 import numpy as np
 import pandas as pd
 import xgboost as xgb
@@ -6,6 +8,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.metrics import accuracy_score, classification_report
+
+os.makedirs("ARTIFACTS", exist_ok=True)
 
 #Loading Data
 X_test=pd.read_csv("DATA/X_test.csv")
@@ -37,24 +41,9 @@ print("Decision Tree Accuracy:", dtAccuracy)
 print("XGBoost accuracy", xgbAccuracy)
 print(classification_report(y_test, rfPred))
 
-#Save all models
-rfModelBundel ={
-    "model":rfModel,
-    "predictions":rfPred,
-    "accuracy":rfAccuracy
-}
-joblib.dump(rfModelBundel,"ARTIFACTS/Diabetes_rfModel.pkl")
-
-dtModelBundel ={
-    "model":dtModel,
-    "predictions":dtPred,
-    "accuracy":dtAccuracy
-}
-joblib.dump(dtModelBundel,"ARTIFACTS/Diabetes_dtModel.pkl")
-
-xgbModelBundel ={
-    "model":xgbModel,
-    "predictions":xgbPred,
-    "accuracy":xgbAccuracy
-}
-joblib.dump(xgbModelBundel,"ARTIFACTS/Diabetes_xgbModel.pkl")
+# Save models only (no prediction arrays — smaller files, fine for Git/deploy).
+# Dash loads only rfModelBundle["model"].
+_dump_kw = dict(compress=3)
+joblib.dump({"model": rfModel, "accuracy": rfAccuracy}, "ARTIFACTS/Diabetes_rfModel.pkl", **_dump_kw)
+joblib.dump({"model": dtModel, "accuracy": dtAccuracy}, "ARTIFACTS/Diabetes_dtModel.pkl", **_dump_kw)
+joblib.dump({"model": xgbModel, "accuracy": xgbAccuracy}, "ARTIFACTS/Diabetes_xgbModel.pkl", **_dump_kw)

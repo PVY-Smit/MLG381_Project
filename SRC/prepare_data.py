@@ -1,8 +1,11 @@
+import os
+
 import numpy as np
 import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
 
+os.makedirs("ARTIFACTS", exist_ok=True)
 
 # loading dataset
 df = pd.read_csv("DATA/Diabetes_and_LifeStyle_Dataset.csv")

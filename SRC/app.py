@@ -1,4 +1,6 @@
 from typing import Optional
+import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -626,8 +628,152 @@ section_layout = [
     ),
 ]
 
+
+def _notebook_gallery_items() -> list[dict]:
+    manifest_path = (
+        Path(__file__).resolve().parent / "assets" / "notebook_figures" / "manifest.json"
+    )
+    if not manifest_path.is_file():
+        return []
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return data if isinstance(data, list) else []
+
+
 dash_app = dash.Dash(__name__)
 server = dash_app.server
+
+_decision_support_children = [
+    html.H1(
+        "Diabetes Risk Decision Support System",
+        style={
+            "textAlign": "center",
+            "color": "#111",
+            "marginBottom": "10px",
+            "fontSize": "26px",
+        },
+    ),
+    html.P(
+        "Enter patient information, then press Predict to see stage estimate and guidance. "
+        "Tip: hover field labels for more information.",
+        style={"textAlign": "center", "marginBottom": "20px", "fontWeight": "600"},
+    ),
+    *section_layout,
+    html.Button(
+        "Predict",
+        id="predictButton",
+        n_clicks=0,
+        style={
+            "width": "100%",
+            "padding": "14px",
+            "marginTop": "28px",
+            "backgroundColor": "#4a148c",
+            "color": "white",
+            "border": "none",
+            "borderRadius": "0",
+            "fontSize": "16px",
+            "cursor": "pointer",
+            "fontWeight": "bold",
+        },
+    ),
+    html.Div(
+        id="modalBackdrop",
+        style={**MODAL_BACKDROP_BASE, "display": "none"},
+        children=[
+            html.Div(
+                style=MODAL_PANEL,
+                children=[
+                    html.Div(
+                        style={
+                            "display": "flex",
+                            "justifyContent": "space-between",
+                            "alignItems": "center",
+                            "marginBottom": "16px",
+                        },
+                        children=[
+                            html.H3(
+                                "Results",
+                                style={"margin": 0, "fontSize": "20px"},
+                            ),
+                            html.Button(
+                                "Close",
+                                id="modalClose",
+                                n_clicks=0,
+                                style={
+                                    "padding": "8px 16px",
+                                    "border": "1px solid #333",
+                                    "background": "#fff",
+                                    "cursor": "pointer",
+                                    "borderRadius": "0",
+                                    "fontWeight": "600",
+                                },
+                            ),
+                        ],
+                    ),
+                    html.Div(id="resultsModalBody"),
+                ],
+            )
+        ],
+    ),
+]
+
+_gallery_items = _notebook_gallery_items()
+_notebook_gallery_children: list = [
+    html.H1(
+        "Notebook analysis figures",
+        style={
+            "textAlign": "center",
+            "color": "#111",
+            "marginBottom": "10px",
+            "fontSize": "26px",
+        },
+    ),
+    html.P(
+        "Plots saved from the project Jupyter notebooks (embedded cell outputs). "
+        "To refresh after you change a notebook, run: python SRC/extract_notebook_figures.py "
+        "from the project root.",
+        style={"textAlign": "center", "marginBottom": "8px", "fontWeight": "600"},
+    ),
+    html.P(
+        "K-Means.ipynb is included in the extractor when it contains figure outputs; "
+        "the current checked-in file has none.",
+        style={"textAlign": "center", "marginBottom": "24px", "color": "#555", "fontSize": "14px"},
+    ),
+]
+if not _gallery_items:
+    _notebook_gallery_children.append(
+        html.P(
+            "No figures found. Add manifest.json and PNGs under SRC/assets/notebook_figures/, "
+            "or run python SRC/extract_notebook_figures.py.",
+            style={"textAlign": "center", "color": "#b71c1c"},
+        )
+    )
+else:
+    for idx, item in enumerate(_gallery_items, start=1):
+        nb_label = str(item.get("notebook", "Notebook")).replace("_", " ")
+        cap = str(item.get("caption", "Figure"))
+        fn = item["file"]
+        _notebook_gallery_children.append(
+            html.Div(
+                style={"marginBottom": "36px"},
+                children=[
+                    html.H4(
+                        f"{nb_label} — {cap} (figure {idx})",
+                        style={"marginBottom": "12px", "color": "#222"},
+                    ),
+                    html.Img(
+                        src=dash_app.get_asset_url(f"notebook_figures/{fn}"),
+                        alt=f"{nb_label} figure {idx}",
+                        style={
+                            "maxWidth": "100%",
+                            "height": "auto",
+                            "display": "block",
+                            "border": "1px solid #ccc",
+                            "backgroundColor": "#fff",
+                        },
+                    ),
+                ],
+            )
+        )
 
 dash_app.layout = html.Div(
     style={
@@ -638,81 +784,42 @@ dash_app.layout = html.Div(
     },
     children=[
         html.Div(
-            style=SHARP_CARD,
+            style={"maxWidth": "960px", "margin": "0 auto"},
             children=[
-                html.H1(
-                    "Diabetes Risk Decision Support System",
-                    style={
-                        "textAlign": "center",
-                        "color": "#111",
-                        "marginBottom": "10px",
-                        "fontSize": "26px",
-                    },
-                ),
-                html.P(
-                    "Enter patient information, then press Predict to see stage estimate and guidance. "
-                    "Tip: hover field labels for more information.",
-                    style={"textAlign": "center", "marginBottom": "20px", "fontWeight": "600"},
-                ),
-                *section_layout,
-                html.Button(
-                    "Predict",
-                    id="predictButton",
-                    n_clicks=0,
-                    style={
-                        "width": "100%",
-                        "padding": "14px",
-                        "marginTop": "28px",
-                        "backgroundColor": "#4a148c",
-                        "color": "white",
-                        "border": "none",
-                        "borderRadius": "0",
-                        "fontSize": "16px",
-                        "cursor": "pointer",
-                        "fontWeight": "bold",
-                    },
-                ),
-                html.Div(
-                    id="modalBackdrop",
-                    style={**MODAL_BACKDROP_BASE, "display": "none"},
+        dcc.Tabs(
+            id="appMainTabs",
+            value="tab-decision",
+            persistence=True,
+            persistence_type="session",
+            colors={
+                "border": "#222",
+                "primary": "#4a148c",
+                "background": "#f5f5f5",
+            },
+            style={"marginBottom": "4px"},
+            children=[
+                dcc.Tab(
+                    label="Decision support",
+                    value="tab-decision",
+                    style={"padding": "10px 14px", "fontWeight": "600"},
+                    selected_style={"padding": "10px 14px", "fontWeight": "700"},
                     children=[
-                        html.Div(
-                            style=MODAL_PANEL,
-                            children=[
-                                html.Div(
-                                    style={
-                                        "display": "flex",
-                                        "justifyContent": "space-between",
-                                        "alignItems": "center",
-                                        "marginBottom": "16px",
-                                    },
-                                    children=[
-                                        html.H3(
-                                            "Results",
-                                            style={"margin": 0, "fontSize": "20px"},
-                                        ),
-                                        html.Button(
-                                            "Close",
-                                            id="modalClose",
-                                            n_clicks=0,
-                                            style={
-                                                "padding": "8px 16px",
-                                                "border": "1px solid #333",
-                                                "background": "#fff",
-                                                "cursor": "pointer",
-                                                "borderRadius": "0",
-                                                "fontWeight": "600",
-                                            },
-                                        ),
-                                    ],
-                                ),
-                                html.Div(id="resultsModalBody"),
-                            ],
-                        )
+                        html.Div(style=SHARP_CARD, children=_decision_support_children),
+                    ],
+                ),
+                dcc.Tab(
+                    label="Notebook figures",
+                    value="tab-notebook",
+                    style={"padding": "10px 14px", "fontWeight": "600"},
+                    selected_style={"padding": "10px 14px", "fontWeight": "700"},
+                    children=[
+                        html.Div(style=SHARP_CARD, children=_notebook_gallery_children),
                     ],
                 ),
             ],
-        )
+        ),
+            ],
+        ),
     ],
 )
 
