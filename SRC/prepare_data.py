@@ -1,14 +1,18 @@
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
 
-os.makedirs("ARTIFACTS", exist_ok=True)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_DATA_DIR = _REPO_ROOT / "DATA"
+_ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
+os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
 
 # loading dataset
-df = pd.read_csv("DATA/Diabetes_and_LifeStyle_Dataset.csv")
+df = pd.read_csv(_DATA_DIR / "Diabetes_and_LifeStyle_Dataset.csv")
 
 # cleaning column names
 df.columns = df.columns.str.strip()
@@ -149,7 +153,7 @@ UIModelBundle = {
     "featureQuantiles": featureQuantiles
 }
 
-joblib.dump(UIModelBundle,"ARTIFACTS/UIModel.pkl")
+joblib.dump(UIModelBundle, _ARTIFACTS_DIR / "UIModel.pkl")
 
 DataModelBundle={
     "featureColumns": list(X.columns),
@@ -157,10 +161,10 @@ DataModelBundle={
     "categoryMaps": categoryMaps,
     "targetMap": targetMap,
 }
-joblib.dump(DataModelBundle,"ARTIFACTS/DataModel.pkl")
+joblib.dump(DataModelBundle, _ARTIFACTS_DIR / "DataModel.pkl")
 
 #Capturing Formatted Data
-X_test.to_csv("DATA/X_test.csv",index=False)
-y_test.to_csv("DATA/y_test.csv",index=False)
-X_train.to_csv("DATA/X_train.csv",index=False)
-y_train.to_csv("DATA/y_train.csv",index=False)
+X_test.to_csv(_DATA_DIR / "X_test.csv", index=False)
+y_test.to_csv(_DATA_DIR / "y_test.csv", index=False)
+X_train.to_csv(_DATA_DIR / "X_train.csv", index=False)
+y_train.to_csv(_DATA_DIR / "y_train.csv", index=False)

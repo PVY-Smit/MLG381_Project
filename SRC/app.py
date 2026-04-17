@@ -199,22 +199,27 @@ MODAL_PANEL = {
     "boxShadow": "0 8px 32px rgba(0,0,0,0.25)",
 }
 
-rfModelBundle = joblib.load("ARTIFACTS/Diabetes_rfModel.pkl")
+# Repo root (parent of SRC/) so ARTIFACTS/DATA resolve on Render regardless of process cwd.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
+_DATA_DIR = _REPO_ROOT / "DATA"
+
+rfModelBundle = joblib.load(_ARTIFACTS_DIR / "Diabetes_rfModel.pkl")
 model = rfModelBundle["model"]
 
-dataModelBundle =joblib.load("ARTIFACTS/DataModel.pkl")
+dataModelBundle =joblib.load(_ARTIFACTS_DIR / "DataModel.pkl")
 featureColumns = dataModelBundle["featureColumns"]
 categoricalColumns = list(dataModelBundle["categoricalColumns"])
 categoryMaps = dataModelBundle["categoryMaps"]
 targetMap = list(dataModelBundle["targetMap"])
 
-uiModelBundle =joblib.load("ARTIFACTS/UIModel.pkl")
+uiModelBundle =joblib.load(_ARTIFACTS_DIR / "UIModel.pkl")
 worstStageIndex = int(uiModelBundle.get("worstStageIndex", len(targetMap) - 1))
 shapBackground = uiModelBundle.get("shapBackground")
 sliderBounds = dict(uiModelBundle.get("sliderBounds") or {})
 featureQuantiles = dict(uiModelBundle.get("featureQuantiles") or {})
 
-df = pd.read_csv("DATA/Diabetes_and_LifeStyle_Dataset.csv")
+df = pd.read_csv(_DATA_DIR / "Diabetes_and_LifeStyle_Dataset.csv")
 df.columns = df.columns.str.strip()
 
 for col in featureColumns:
