@@ -203,10 +203,15 @@ MODAL_PANEL = {
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
 
-try:
-    rfModelBundle = joblib.load(_ARTIFACTS_DIR / "Diabetes_rfModel.pkl", mmap_mode="r")
-except Exception:
-    rfModelBundle = joblib.load(_ARTIFACTS_DIR / "Diabetes_rfModel.pkl")
+_rf_path = _ARTIFACTS_DIR / "Diabetes_rfModel.pkl"
+if not _rf_path.is_file():
+    raise FileNotFoundError(
+        f"Missing {_rf_path}. From the project root run: "
+        "python SRC/prepare_data.py && python SRC/train.py "
+        "(needs DATA/Diabetes_and_LifeStyle_Dataset.csv)."
+    )
+
+rfModelBundle = joblib.load(_rf_path)
 model = rfModelBundle["model"]
 
 dataModelBundle =joblib.load(_ARTIFACTS_DIR / "DataModel.pkl")
@@ -225,11 +230,17 @@ featureQuantiles = dict(uiModelBundle.get("featureQuantiles") or {})
 def _numeric_median_default(col: str, lo: float, hi: float) -> float:
     """Median for slider defaults from training quantiles (avoids loading full CSV at import)."""
     q = featureQuantiles.get(col)
-    if q and "p50" in q:
-        try:
-            return float(q["p50"])
-        except (TypeError, ValueError):
-            pass
+    if q:
+        if "p50" in q:
+            try:
+                return float(q["p50"])
+            except (TypeError, ValueError):
+                pass
+        if "p25" in q and "p75" in q:
+            try:
+                return (float(q["p25"]) + float(q["p75"])) / 2.0
+            except (TypeError, ValueError):
+                pass
     return float(lo + hi) / 2.0
 
 
@@ -1237,4 +1248,5 @@ def close_modal(n):
 
 
 if __name__ == "__main__":
-    dash_app.run(debug=True)
+    # use_reloader=False avoids a second Python process (Windows) and duplicate callback issues.
+    dash_app.run(debug=True, use_reloader=False)
