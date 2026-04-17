@@ -263,7 +263,7 @@ for _a in featureColumns:
         break
 
 _explainer = None
-_ENABLE_SHAP = os.getenv("ENABLE_SHAP", "true").strip().lower() in ("1", "true", "yes", "on")
+_ENABLE_SHAP = os.getenv("ENABLE_SHAP", "false").strip().lower() in ("1", "true", "yes", "on")
 
 
 def get_explainer():
