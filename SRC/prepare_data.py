@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.request import urlretrieve
 
 import numpy as np
 import pandas as pd
@@ -9,10 +10,38 @@ from sklearn.model_selection import train_test_split
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DATA_DIR = _REPO_ROOT / "DATA"
 _ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
+os.makedirs(_DATA_DIR, exist_ok=True)
 os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
 
+
+def resolve_dataset_path() -> Path:
+    """Find dataset locally or download it from DATASET_URL."""
+    candidates = (
+        "Diabetes_and_LifeStyle_Dataset.csv",
+        "Diabetes_and_Lifestyle_Dataset.csv",
+        "diabetes_and_lifestyle_dataset.csv",
+    )
+    for name in candidates:
+        p = _DATA_DIR / name
+        if p.is_file():
+            return p
+
+    dataset_url = os.getenv("DATASET_URL", "").strip()
+    target = _DATA_DIR / "Diabetes_and_Lifestyle_Dataset.csv"
+    if dataset_url:
+        print(f"Dataset not found locally. Downloading from DATASET_URL to {target}...")
+        urlretrieve(dataset_url, target)
+        return target
+
+    raise FileNotFoundError(
+        "Dataset CSV not found in DATA/. "
+        "Provide one of the expected files or set DATASET_URL on Render so "
+        "prepare_data.py can download it during build."
+    )
+
+
 # loading dataset
-df = pd.read_csv(_DATA_DIR / "Diabetes_and_LifeStyle_Dataset.csv")
+df = pd.read_csv(resolve_dataset_path())
 
 # cleaning column names
 df.columns = df.columns.str.strip()
