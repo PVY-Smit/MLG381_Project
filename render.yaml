@@ -13,3 +13,5 @@ services:
         value: "3.11.9"
       - key: DATASET_URL
         sync: false
+      - key: ENABLE_SHAP
+        value: "false"

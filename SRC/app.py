@@ -1,4 +1,5 @@
 from typing import Optional
+import os
 import json
 from pathlib import Path
 
@@ -262,10 +263,13 @@ for _a in featureColumns:
         break
 
 _explainer = None
+_ENABLE_SHAP = os.getenv("ENABLE_SHAP", "true").strip().lower() in ("1", "true", "yes", "on")
 
 
 def get_explainer():
     global _explainer
+    if not _ENABLE_SHAP:
+        return None
     if _explainer is None and shapBackground is not None:
         import shap
 
@@ -1029,6 +1033,8 @@ if BMI_COL:
 
 
 def shap_top_features(input_frame: pd.DataFrame, k: int = 3):
+    if not _ENABLE_SHAP:
+        return None, []
     explainer = get_explainer()
     if explainer is None:
         return None, []
