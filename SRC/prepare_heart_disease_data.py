@@ -5,7 +5,8 @@ from urllib.request import urlretrieve
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.model_selection import train_test_split, RobustScalar
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import RobustScaler
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -52,17 +53,19 @@ df = pd.read_csv(resolve_dataset_path())
 
 # cleaning column names
 df.columns = df.columns.str.strip()
-df = RobustScalar().fit_transform(df)
+df = RobustScaler().fit_transform(df)
 
 # defining the target
 targetColumn = "target"
 
 # dropping leakage columns if they exist
+
 columnsToDrop = [targetColumn]  
+"""
 for col in []:
     if col in df.columns:
         columnsToDrop.append(col)
-
+"""
 # save original categorical options before encoding
 categoricalColumns = [col for col in df.select_dtypes(include=["object"]).columns if col != targetColumn]
 categoryMaps = {}
@@ -86,8 +89,8 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42
 )
 
-#Prepairing UI Model Bundle
 
+#Prepairing UI Model Bundle
 def worst_stage_index(labels: list) -> int:
     """Pick class index used as 'high risk' for SHAP and messaging."""
     lowered = [str(x).lower() for x in labels]
@@ -191,7 +194,7 @@ UIModelBundle = {
     "featureQuantiles": featureQuantiles
 }
 
-joblib.dump(UIModelBundle, _ARTIFACTS_DIR / "UIModel.pkl")
+joblib.dump(UIModelBundle, _ARTIFACTS_DIR / "UIModel_hd.pkl")
 
 DataModelBundle={
     "featureColumns": list(X.columns),

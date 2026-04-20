@@ -5,7 +5,8 @@ from urllib.request import urlretrieve
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.model_selection import train_test_split, RobustScalar
+from sklearn.model_selection import train_test_split 
+from sklearn.preprocessing import RobustScaler
 
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -45,8 +46,15 @@ def resolve_dataset_path() -> Path:
 df = pd.read_csv(resolve_dataset_path())
 
 # cleaning column names
+nonFloat_col =["Age","Gender","Ethnicity","Education_level","Income_level","Employment_status","Smoking_status", "diabetes_stage"]
+float_col=[]
+for col in df.columns:
+    if col not in nonFloat_col:
+        float_col.append(col)
+
 df.columns = df.columns.str.strip()
-df = RobustScalar().fit_transform(df)
+df = pd.concat([pd.DataFrame(RobustScaler.fit_transform(df.drop(columns=nonFloat_col)), columns=df.columns, index=df.index),df.drop(columns=float_col)],axis=1)
+
 
 # defining the target
 targetColumn = "diabetes_stage"
@@ -185,7 +193,7 @@ UIModelBundle = {
     "featureQuantiles": featureQuantiles
 }
 
-joblib.dump(UIModelBundle, _ARTIFACTS_DIR / "UIModel.pkl")
+joblib.dump(UIModelBundle, _ARTIFACTS_DIR / "UIModel_db.pkl")
 
 DataModelBundle={
     "featureColumns": list(X.columns),
