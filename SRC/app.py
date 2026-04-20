@@ -215,13 +215,13 @@ if not _rf_path.is_file():
 rfModelBundle = joblib.load(_rf_path)
 model = rfModelBundle["model"]
 
-dataModelBundle =joblib.load(_ARTIFACTS_DIR / "DataModel.pkl")
+dataModelBundle =joblib.load(_ARTIFACTS_DIR / "DataModel_db.pkl")
 featureColumns = dataModelBundle["featureColumns"]
 categoricalColumns = list(dataModelBundle["categoricalColumns"])
 categoryMaps = dataModelBundle["categoryMaps"]
 targetMap = list(dataModelBundle["targetMap"])
 
-uiModelBundle =joblib.load(_ARTIFACTS_DIR / "UIModel.pkl")
+uiModelBundle =joblib.load(_ARTIFACTS_DIR / "UIModel_db.pkl")
 worstStageIndex = int(uiModelBundle.get("worstStageIndex", len(targetMap) - 1))
 shapBackground = uiModelBundle.get("shapBackground")
 sliderBounds = dict(uiModelBundle.get("sliderBounds") or {})

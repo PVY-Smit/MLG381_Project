@@ -5,7 +5,8 @@ from urllib.request import urlretrieve
 import numpy as np
 import pandas as pd
 import joblib
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, RobustScalar
+
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DATA_DIR = _REPO_ROOT / "DATA"
@@ -45,12 +46,13 @@ df = pd.read_csv(resolve_dataset_path())
 
 # cleaning column names
 df.columns = df.columns.str.strip()
+df = RobustScalar().fit_transform(df)
 
 # defining the target
 targetColumn = "diabetes_stage"
 
 # dropping leakage columns if they exist
-columnsToDrop = [targetColumn]
+columnsToDrop = [targetColumn]  
 for col in ["diagnosed_diabetes", "diabetes_risk_score"]:
     if col in df.columns:
         columnsToDrop.append(col)
@@ -191,10 +193,10 @@ DataModelBundle={
     "categoryMaps": categoryMaps,
     "targetMap": targetMap,
 }
-joblib.dump(DataModelBundle, _ARTIFACTS_DIR / "DataModel.pkl")
+joblib.dump(DataModelBundle, _ARTIFACTS_DIR / "DataModel_db.pkl")
 
 #Capturing Formatted Data
-X_test.to_csv(_DATA_DIR / "X_test.csv", index=False)
-y_test.to_csv(_DATA_DIR / "y_test.csv", index=False)
-X_train.to_csv(_DATA_DIR / "X_train.csv", index=False)
-y_train.to_csv(_DATA_DIR / "y_train.csv", index=False)
+X_test.to_csv(_DATA_DIR / "X_test_db.csv", index=False)
+y_test.to_csv(_DATA_DIR / "y_test_db.csv", index=False)
+X_train.to_csv(_DATA_DIR / "X_train_db.csv", index=False)
+y_train.to_csv(_DATA_DIR / "y_train_db.csv", index=False)

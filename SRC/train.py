@@ -16,10 +16,10 @@ _ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
 os.makedirs(_ARTIFACTS_DIR, exist_ok=True)
 
 #Loading Data
-X_test=pd.read_csv(_DATA_DIR / "X_test.csv")
-X_train=pd.read_csv(_DATA_DIR / "X_train.csv")
-y_test=pd.read_csv(_DATA_DIR / "y_test.csv")
-y_train=pd.read_csv(_DATA_DIR / "y_train.csv")
+X_test=pd.read_csv(_DATA_DIR / "X_test_db.csv")
+X_train=pd.read_csv(_DATA_DIR / "X_train_db.csv")
+y_test=pd.read_csv(_DATA_DIR / "y_test_db.csv")
+y_train=pd.read_csv(_DATA_DIR / "y_train_db.csv")
 
 # Random Forest
 rfModel = RandomForestClassifier(random_state=42, n_jobs=1)
@@ -51,3 +51,4 @@ _dump_kw = dict(compress=3)
 joblib.dump({"model": rfModel, "accuracy": rfAccuracy}, _ARTIFACTS_DIR / "Diabetes_rfModel.pkl", **_dump_kw)
 joblib.dump({"model": dtModel, "accuracy": dtAccuracy}, _ARTIFACTS_DIR / "Diabetes_dtModel.pkl", **_dump_kw)
 joblib.dump({"model": xgbModel, "accuracy": xgbAccuracy}, _ARTIFACTS_DIR / "Diabetes_xgbModel.pkl", **_dump_kw)
+
