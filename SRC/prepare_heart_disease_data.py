@@ -53,10 +53,12 @@ df = pd.read_csv(resolve_dataset_path())
 
 # cleaning column names
 df.columns = df.columns.str.strip()
-df = RobustScaler().fit_transform(df)
 
 # defining the target
 targetColumn = "target"
+
+# keep original values (no scaling for heart disease)
+df = df.copy()
 
 # dropping leakage columns if they exist
 
@@ -67,7 +69,7 @@ for col in []:
         columnsToDrop.append(col)
 """
 # save original categorical options before encoding
-categoricalColumns = [col for col in df.select_dtypes(include=["object"]).columns if col != targetColumn]
+categoricalColumns = []
 categoryMaps = {}
 
 for col in categoricalColumns:
@@ -146,6 +148,8 @@ def build_slider_bounds(feature_name: str, series: pd.Series) -> dict:
     key = feature_name.lower()
     if key == "diet_score":
         return {"min": 0.0, "max": 100.0}
+    if key == "age":
+        return {"min": float(series.min()), "max": 100.0}
     p1 = float(series.quantile(0.01))
     p99 = float(series.quantile(0.99))
     data_min = float(series.min())

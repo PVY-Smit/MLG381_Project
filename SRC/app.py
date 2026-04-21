@@ -29,6 +29,14 @@ def col_key(name: str) -> str:
     return str(name).strip().lower()
 
 
+def is_forced_binary_column(col: str) -> bool:
+    return col_key(col) in FORCED_BINARY_FIELDS
+
+
+def is_forced_dropdown_column(col: str) -> bool:
+    return col_key(col) in FORCED_DROPDOWN_FIELDS
+
+
 FEATURE_HELP = {
     "age": "Patient age in years.",
     "gender": "Sex recorded for the patient.",
@@ -83,6 +91,32 @@ FEATURE_UNITS = {
     "family_history_diabetes": "0–1",
     "hypertension_history": "0–1",
     "cardiovascular_history": "0–1",
+}
+
+FORCED_BINARY_FIELDS = {"sex", "fbs", "exang"}
+
+FORCED_DROPDOWN_FIELDS = {
+    "cp": {
+        1: "1 - Typical angina",
+        2: "2 - Atypical angina",
+        3: "3 - Non-anginal pain",
+        4: "4 - Asymptomatic",
+    },
+    "restecg": {
+        0: "0 - Normal",
+        1: "1 - ST-T abnormality",
+        2: "2 - Left ventricular hypertrophy",
+    },
+    "slope": {
+        1: "1 - Upsloping",
+        2: "2 - Flat",
+        3: "3 - Downsloping",
+    },
+    "thal": {
+        3: "3 - Normal",
+        6: "6 - Fixed defect",
+        7: "7 - Reversible defect",
+    },
 }
 
 SECTION_HELP = {
@@ -204,28 +238,33 @@ MODAL_PANEL = {
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
 
-_rf_path = _ARTIFACTS_DIR / "Diabetes_rfModel.pkl"
+_rf_path = _ARTIFACTS_DIR / "Heart_rfModel.pkl"
 if not _rf_path.is_file():
     raise FileNotFoundError(
         f"Missing {_rf_path}. From the project root run: "
-        "python SRC/prepare_data.py && python SRC/train.py "
-        "(needs DATA/Diabetes_and_LifeStyle_Dataset.csv)."
+        "python SRC/prepare_heart_disease_data.py && python SRC/train_hd.py "
+        "(needs DATA/Heart_disease_statlog.csv)."
     )
 
 rfModelBundle = joblib.load(_rf_path)
 model = rfModelBundle["model"]
 
-dataModelBundle =joblib.load(_ARTIFACTS_DIR / "DataModel_db.pkl")
+dataModelBundle = joblib.load(_ARTIFACTS_DIR / "DataModel_hd.pkl")
 featureColumns = dataModelBundle["featureColumns"]
 categoricalColumns = list(dataModelBundle["categoricalColumns"])
 categoryMaps = dataModelBundle["categoryMaps"]
 targetMap = list(dataModelBundle["targetMap"])
 
-uiModelBundle =joblib.load(_ARTIFACTS_DIR / "UIModel_db.pkl")
+uiModelBundle = joblib.load(_ARTIFACTS_DIR / "UIModel_hd.pkl")
 worstStageIndex = int(uiModelBundle.get("worstStageIndex", len(targetMap) - 1))
 shapBackground = uiModelBundle.get("shapBackground")
 sliderBounds = dict(uiModelBundle.get("sliderBounds") or {})
 featureQuantiles = dict(uiModelBundle.get("featureQuantiles") or {})
+
+print("APP IS USING HEART FILES")
+print("Model path:", _rf_path)
+print("First 5 features:", featureColumns[:5])
+print("Age bounds:", sliderBounds.get("age"))
 
 
 def _numeric_median_default(col: str, lo: float, hi: float) -> float:
@@ -326,6 +365,10 @@ def numeric_columns_with_slider_input() -> list:
     for c in featureColumns:
         if c in categoricalColumns:
             continue
+        if is_forced_dropdown_column(c):
+            continue
+        if is_forced_binary_column(c):
+            continue
         if is_binary_numeric_column(c):
             continue
         out.append(c)
@@ -370,17 +413,57 @@ def build_field(col: str) -> html.Div:
         },
     )
 
-    if col in categoricalColumns:
+    if is_forced_dropdown_column(col):
+        option_map = FORCED_DROPDOWN_FIELDS[col_key(col)]
+        options = [{"label": label, "value": value} for value, label in option_map.items()]
+        first_value = list(option_map.keys())[0]
+        control = dcc.Dropdown(
+            id=f"{col}Input",
+            options=options,
+            value=first_value,
+            clearable=False,
+            searchable=False,
+            style={"width": "100%"},
+        )
+
+    elif col in categoricalColumns:
         options = [{"label": v, "value": v} for v in categoryMaps[col]]
         control = dcc.Dropdown(
             id=f"{col}Input",
             options=options,
             value=categoryMaps[col][0] if categoryMaps[col] else None,
-            placeholder=f"Select {friendly}",
             clearable=False,
             searchable=False,
             style={"width": "100%"},
         )
+
+    elif is_forced_binary_column(col):
+        default_value = 0
+        q = featureQuantiles.get(col)
+        if q and "p50" in q:
+            try:
+                default_value = int(round(float(q["p50"])))
+            except (TypeError, ValueError):
+                default_value = 0
+
+        binary_options = [
+            {"label": "No", "value": 0},
+            {"label": "Yes", "value": 1},
+        ]
+        if col_key(col) == "sex":
+            binary_options = [
+                {"label": "Female", "value": 0},
+                {"label": "Male", "value": 1},
+            ]
+
+        control = dcc.RadioItems(
+            id=f"{col}Input",
+            options=binary_options,
+            value=default_value if default_value in (0, 1) else 0,
+            inline=True,
+            style={"marginTop": "4px"},
+        )
+
     elif is_binary_numeric_column(col):
         bounds = sliderBounds.get(col, {"min": 0.0, "max": 1.0})
         lo_b, hi_b = float(bounds["min"]), float(bounds["max"])
@@ -517,6 +600,7 @@ def build_field(col: str) -> html.Div:
                                             step=step,
                                             value=med,
                                             tooltip=tooltip,
+                                            marks=None,
                                         ),
                                     ],
                                 ),
@@ -574,6 +658,7 @@ def build_field(col: str) -> html.Div:
                             step=step,
                             value=med,
                             tooltip=tooltip,
+                            marks=None,
                         ),
                     ],
                 ),
@@ -659,7 +744,7 @@ server = dash_app.server
 
 _decision_support_children = [
     html.H1(
-        "Diabetes Risk Decision Support System",
+        "Heart Disease Risk Decision Support System",
         style={
             "textAlign": "center",
             "color": "#111",
@@ -668,7 +753,7 @@ _decision_support_children = [
         },
     ),
     html.P(
-        "Enter patient information, then press Predict to see stage estimate and guidance. "
+        "Enter patient information, then press Predict to see heart disease risk prediction and guidance. "
         "Tip: hover field labels for more information.",
         style={"textAlign": "center", "marginBottom": "20px", "fontWeight": "600"},
     ),
@@ -878,23 +963,40 @@ def try_parse_optional_float(text) -> Optional[float]:
 
 def collect_input_frame(values):
     input_data = {}
+
     for col, value in zip(featureColumns, values):
-        if col in categoricalColumns:
+        if is_forced_dropdown_column(col):
+            try:
+                input_data[col] = int(value)
+            except (TypeError, ValueError):
+                input_data[col] = list(FORCED_DROPDOWN_FIELDS[col_key(col)].keys())[0]
+
+        elif col in categoricalColumns:
             cats = categoryMaps[col]
             if value in cats:
                 input_data[col] = cats.index(value)
             else:
                 input_data[col] = 0
+
+        elif is_forced_binary_column(col):
+            try:
+                iv = int(value)
+            except (TypeError, ValueError):
+                iv = 0
+            input_data[col] = 0 if iv not in (0, 1) else iv
+
         elif is_binary_numeric_column(col):
             try:
                 iv = int(value)
             except (TypeError, ValueError):
                 iv = 0
             input_data[col] = 0 if iv not in (0, 1) else iv
+
         else:
             bounds = sliderBounds.get(col, {"min": 0.0, "max": 100.0})
             lo, hi = float(bounds["min"]), float(bounds["max"])
             input_data[col] = _parse_clamped_numeric(value, lo, hi)
+
     return pd.DataFrame([input_data], columns=featureColumns)
 
 
@@ -1224,7 +1326,7 @@ def on_predict(n_clicks, *values):
     body_children = [
         html.P(
             [
-                html.Strong("Predicted diabetes stage: "),
+                html.Strong("Predicted heart disease class: "),
                 html.Span(pred_label, style={"color": "#1b5e20"}),
             ],
             style={"fontSize": "18px", "marginBottom": "12px"},
@@ -1295,4 +1397,4 @@ def close_modal(n):
 
 if __name__ == "__main__":
     # use_reloader=False avoids a second Python process (Windows) and duplicate callback issues.
-    dash_app.run(debug=True, use_reloader=False)
+    dash_app.run(debug=True, use_reloader=False, port=8051)
