@@ -1,4 +1,8 @@
-"""Export PNG outputs from project notebooks into SRC/assets/notebook_figures/."""
+"""Export PNG outputs from project notebooks into SRC/assets/notebook_figures/.
+
+Scans NOTEBOOKS/*.ipynb and writes manifest.json. Re-run after executing notebook cells
+so image/png outputs are stored in the .ipynb (e.g. Diabetes_Lifestyle, Heart_Disease).
+"""
 from __future__ import annotations
 
 import base64

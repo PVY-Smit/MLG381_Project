@@ -911,14 +911,13 @@ _notebook_gallery_children: list = [
         },
     ),
     html.P(
-        "Plots saved from the project Jupyter notebooks (embedded cell outputs). "
-        "To refresh after you change a notebook, run: python SRC/extract_notebook_figures.py "
-        "from the project root.",
+        "Plots saved from the Jupyter notebooks under NOTEBOOKS/ (embedded cell outputs), "
+        "including Diabetes_Lifestyle and Heart_Disease. "
+        "After editing or re-running cells, run python SRC/extract_notebook_figures.py from the project root.",
         style={"textAlign": "center", "marginBottom": "8px", "fontWeight": "600"},
     ),
     html.P(
-        "K-Means.ipynb is included in the extractor when it contains figure outputs; "
-        "the current checked-in file has none.",
+        "K-Means.ipynb is picked up automatically if a cell outputs a figure; add outputs in the notebook, then re-run the extractor.",
         style={"textAlign": "center", "marginBottom": "24px", "color": "#555", "fontSize": "14px"},
     ),
 ]

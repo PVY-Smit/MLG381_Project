@@ -28,5 +28,25 @@
     "file": "Diabetes_Lifestyle_06.png",
     "caption": "3. Exploratory Data Analysis (EDA)",
     "notebook": "Diabetes_Lifestyle"
+  },
+  {
+    "file": "Heart_Disease_01.png",
+    "caption": "3. Target distribution",
+    "notebook": "Heart_Disease"
+  },
+  {
+    "file": "Heart_Disease_02.png",
+    "caption": "4. Correlation heatmap (numeric features)",
+    "notebook": "Heart_Disease"
+  },
+  {
+    "file": "Heart_Disease_03.png",
+    "caption": "5. Age by target",
+    "notebook": "Heart_Disease"
+  },
+  {
+    "file": "Heart_Disease_04.png",
+    "caption": "6. Random Forest feature importance",
+    "notebook": "Heart_Disease"
   }
 ]
