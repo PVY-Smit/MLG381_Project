@@ -12,6 +12,22 @@ from dash.exceptions import PreventUpdate
 
 
 def friendly_feature_label(column: str) -> str:
+    k = col_key(column)
+    heart_labels = {
+        "cp": "Chest pain type",
+        "trestbps": "Resting blood pressure",
+        "chol": "Serum cholesterol",
+        "fbs": "Fasting blood sugar high",
+        "restecg": "Resting ECG",
+        "thalach": "Max heart rate (stress test)",
+        "exang": "Exercise-induced angina",
+        "oldpeak": "ST depression (exercise)",
+        "slope": "ST segment slope",
+        "ca": "Major vessels (fluoroscopy)",
+        "thal": "Thallium scan",
+    }
+    if k in heart_labels:
+        return heart_labels[k]
     text = column.replace("_", " ").strip().title()
     for wrong, right in (
         ("Bmi", "BMI"),
@@ -66,6 +82,19 @@ FEATURE_HELP = {
     "glucose_postprandial": "Blood sugar measured after a meal (post-meal / postprandial).",
     "insulin_level": "Blood insulin concentration.",
     "hba1c": "Average blood sugar over roughly the past 3 months (glycated haemoglobin).",
+    # Cleveland / Statlog heart disease attributes (same keys as prepared CSV columns)
+    "sex": "Sex encoded as in the training data (often 0 = female, 1 = male).",
+    "cp": "Chest pain category (typical angina, atypical, non-anginal, or asymptomatic).",
+    "trestbps": "Resting blood pressure on admission (mmHg).",
+    "chol": "Serum cholesterol (mg/dL).",
+    "fbs": "Whether fasting blood sugar exceeds ~120 mg/dL (1 = yes).",
+    "restecg": "Resting electrocardiogram pattern (normal, ST-T changes, or LV hypertrophy).",
+    "thalach": "Maximum heart rate achieved during exercise stress testing (bpm).",
+    "exang": "Exercise-induced angina (1 = yes).",
+    "oldpeak": "ST depression induced by exercise relative to rest (ST segment shift).",
+    "slope": "Slope of the peak exercise ST segment (upsloping, flat, downsloping).",
+    "ca": "Number of major vessels coloured by fluoroscopy (0–3).",
+    "thal": "Thalassemia / perfusion defect category from scintigraphy (training encoding).",
 }
 
 FEATURE_UNITS = {
@@ -91,6 +120,18 @@ FEATURE_UNITS = {
     "family_history_diabetes": "0–1",
     "hypertension_history": "0–1",
     "cardiovascular_history": "0–1",
+    "sex": "category",
+    "cp": "category",
+    "trestbps": "mmHg",
+    "chol": "mg/dL",
+    "fbs": "0–1",
+    "restecg": "category",
+    "thalach": "bpm",
+    "exang": "0–1",
+    "oldpeak": "mm",
+    "slope": "category",
+    "ca": "0–3",
+    "thal": "category",
 }
 
 FORCED_BINARY_FIELDS = {"sex", "fbs", "exang"}
@@ -124,6 +165,9 @@ SECTION_HELP = {
     "Positive influences": "Behaviours and markers that usually improve when raised (activity, sleep, HDL, diet score).",
     "Negative influences": "Behaviours and lab markers that usually worsen metabolic risk when out of range.",
     "Other clinical indicators": "Remaining risk-related fields from the dataset.",
+    "Resting presentation": "Chest pain type, resting BP, cholesterol, fasting glucose, and resting ECG.",
+    "Exercise stress": "Stress-test exercise capacity, angina, ST depression, and ST slope.",
+    "Catheterisation / imaging": "Angiographic vessel count and thallium categories used in this dataset.",
 }
 
 DEMOGRAPHICS = {
@@ -166,6 +210,7 @@ HIGHER_BETTER = {
     "diet_score",
     "sleep_hours_per_day",
     "hdl_cholesterol",
+    "thalach",  # higher achieved HR on stress test often reflects better exercise capacity
 }
 
 
@@ -238,38 +283,23 @@ MODAL_PANEL = {
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _ARTIFACTS_DIR = _REPO_ROOT / "ARTIFACTS"
 
-_rf_path = _ARTIFACTS_DIR / "Heart_rfModel.pkl"
-if not _rf_path.is_file():
+try:
+    from .dataset_runtime import load_panels
+except ImportError:
+    from dataset_runtime import load_panels
+
+PANELS = load_panels(_ARTIFACTS_DIR)
+if not PANELS:
     raise FileNotFoundError(
-        f"Missing {_rf_path}. From the project root run: "
-        "python SRC/prepare_heart_disease_data.py && python SRC/train_hd.py "
-        "(needs DATA/Heart_disease_statlog.csv)."
+        "No trained models in ARTIFACTS/. From the project root build at least one pipeline:\n"
+        "  Diabetes: python SRC/prepare_diabetes_data.py then python SRC/train.py\n"
+        "  Heart (Statlog): python SRC/prepare_heart_disease_data.py then python SRC/train_hd.py"
     )
 
-rfModelBundle = joblib.load(_rf_path)
-model = rfModelBundle["model"]
 
-dataModelBundle = joblib.load(_ARTIFACTS_DIR / "DataModel_hd.pkl")
-featureColumns = dataModelBundle["featureColumns"]
-categoricalColumns = list(dataModelBundle["categoricalColumns"])
-categoryMaps = dataModelBundle["categoryMaps"]
-targetMap = list(dataModelBundle["targetMap"])
-
-uiModelBundle = joblib.load(_ARTIFACTS_DIR / "UIModel_hd.pkl")
-worstStageIndex = int(uiModelBundle.get("worstStageIndex", len(targetMap) - 1))
-shapBackground = uiModelBundle.get("shapBackground")
-sliderBounds = dict(uiModelBundle.get("sliderBounds") or {})
-featureQuantiles = dict(uiModelBundle.get("featureQuantiles") or {})
-
-print("APP IS USING HEART FILES")
-print("Model path:", _rf_path)
-print("First 5 features:", featureColumns[:5])
-print("Age bounds:", sliderBounds.get("age"))
-
-
-def _numeric_median_default(col: str, lo: float, hi: float) -> float:
+def _numeric_median_default(col: str, lo: float, hi: float, feature_quantiles: dict) -> float:
     """Median for slider defaults from training quantiles (avoids loading full CSV at import)."""
-    q = featureQuantiles.get(col)
+    q = feature_quantiles.get(col)
     if q:
         if "p50" in q:
             try:
@@ -284,43 +314,40 @@ def _numeric_median_default(col: str, lo: float, hi: float) -> float:
     return float(lo + hi) / 2.0
 
 
-# UI bounds (extra changes; also applied in diabetesModel for new bundles)
-sliderBounds["diet_score"] = {"min": 0.0, "max": 100.0}
-for _bmi_col in featureColumns:
-    if col_key(_bmi_col) == "bmi":
-        sliderBounds[_bmi_col] = {"min": 19.0, "max": 54.0}
-        break
-for _w in featureColumns:
-    if col_key(_w) == "waist_to_hip_ratio":
-        b = sliderBounds.get(_w, {"min": 0.0, "max": 1.0})
-        sliderBounds[_w] = {"min": float(b["min"]), "max": min(1.0, float(b["max"]))}
-        break
-for _a in featureColumns:
-    if col_key(_a) == "alcohol_consumption_per_week":
-        b = sliderBounds.get(_a, {"min": 0.0, "max": 20.0})
-        sliderBounds[_a] = {"min": float(b["min"]), "max": min(20.0, float(b["max"]))}
-        break
-
-_explainer = None
 _ENABLE_SHAP = os.getenv("ENABLE_SHAP", "false").strip().lower() in ("1", "true", "yes", "on")
+_explainers: dict = {}
 
 
-def get_explainer():
-    global _explainer
+def get_explainer(panel: dict):
+    pref = panel["prefix"]
+    if pref in _explainers:
+        return _explainers[pref]
     if not _ENABLE_SHAP:
+        _explainers[pref] = None
         return None
-    if _explainer is None and shapBackground is not None:
-        import shap
+    bg = panel.get("shapBackground")
+    if bg is None:
+        _explainers[pref] = None
+        return None
+    import shap
 
-        try:
-            _explainer = shap.TreeExplainer(model, data=shapBackground)
-        except Exception:
-            _explainer = shap.TreeExplainer(model)
-    return _explainer
+    try:
+        _explainers[pref] = shap.TreeExplainer(panel["model"], data=bg)
+    except Exception:
+        _explainers[pref] = shap.TreeExplainer(panel["model"])
+    return _explainers[pref]
 
 
-def assign_section(col: str) -> str:
+def assign_section(col: str, panel: dict) -> str:
     k = col_key(col)
+    if panel["prefix"] == "hd":
+        if k in ("age", "sex"):
+            return "Demographics"
+        if k in ("cp", "trestbps", "chol", "fbs", "restecg"):
+            return "Resting presentation"
+        if k in ("thalach", "exang", "oldpeak", "slope"):
+            return "Exercise stress"
+        return "Catheterisation / imaging"
     if k in DEMOGRAPHICS:
         return "Demographics"
     if k in POSITIVE_INFLUENCES:
@@ -328,6 +355,34 @@ def assign_section(col: str) -> str:
     if k in NEGATIVE_INFLUENCES:
         return "Negative influences"
     return "Other clinical indicators"
+
+
+_HEART_SECTION_TITLE_HELP = {
+    "Demographics": "Patient age and sex used as baseline attributes (Statlog-style encoding).",
+    "Resting presentation": SECTION_HELP["Resting presentation"],
+    "Exercise stress": SECTION_HELP["Exercise stress"],
+    "Catheterisation / imaging": SECTION_HELP["Catheterisation / imaging"],
+}
+
+_DIABETES_SECTION_DEFS = [
+    ("Demographics", "Basic information and background (including age and profile dropdowns)."),
+    ("Positive influences", "Factors that typically support lower risk when they are in a healthy range."),
+    ("Negative influences", "Lifestyle and clinical markers that often track with higher risk when out of range."),
+    ("Other clinical indicators", "Additional fields used by the model."),
+]
+
+_HEART_SECTION_DEFS = [
+    ("Demographics", "Patient age and sex (encoding matches the original Statlog/Cleveland schema)."),
+    ("Resting presentation", "Chest pain type, resting BP, cholesterol, fasting glucose, resting ECG."),
+    ("Exercise stress", "Stress-test heart rate, exercise angina, ST depression and slope."),
+    ("Catheterisation / imaging", "Major vessels visualised on fluoroscopy and thallium scan category."),
+]
+
+
+def section_help_line(title: str, panel: dict) -> str:
+    if panel["prefix"] == "hd":
+        return _HEART_SECTION_TITLE_HELP.get(title, "")
+    return SECTION_HELP.get(title, "")
 
 
 def build_slider_step(col: str, lo: float, hi: float) -> float:
@@ -350,26 +405,29 @@ def build_slider_step(col: str, lo: float, hi: float) -> float:
     return max(1.0, round(span / 100))
 
 
-def is_binary_numeric_column(col: str) -> bool:
-    if col in categoricalColumns:
+def is_binary_numeric_column(col: str, categorical_columns: list, slider_bounds: dict) -> bool:
+    if col in categorical_columns:
         return False
-    b = sliderBounds.get(col)
+    b = slider_bounds.get(col)
     if not b:
         return False
     lo, hi = float(b["min"]), float(b["max"])
     return lo <= 0.01 and 0.99 <= hi <= 1.01
 
 
-def numeric_columns_with_slider_input() -> list:
+def numeric_columns_with_slider_input(panel: dict) -> list:
+    fc = panel["featureColumns"]
+    cc = panel["categoricalColumns"]
+    sb = panel["sliderBounds"]
     out = []
-    for c in featureColumns:
-        if c in categoricalColumns:
+    for c in fc:
+        if c in cc:
             continue
         if is_forced_dropdown_column(c):
             continue
         if is_forced_binary_column(c):
             continue
-        if is_binary_numeric_column(c):
+        if is_binary_numeric_column(c, cc, sb):
             continue
         out.append(c)
     return out
@@ -391,7 +449,12 @@ def numeric_text_input_initial_value(med: float) -> str:
     return slider_value_as_display_text(med)
 
 
-def build_field(col: str) -> html.Div:
+def build_field(col: str, panel: dict) -> html.Div:
+    px = panel["prefix"]
+    sliderBounds = panel["sliderBounds"]
+    featureQuantiles = panel["featureQuantiles"]
+    categoricalColumns = panel["categoricalColumns"]
+    categoryMaps = panel["categoryMaps"]
     friendly = friendly_feature_label(col)
     k = col_key(col)
     help_text = FEATURE_HELP.get(k, "")
@@ -418,7 +481,7 @@ def build_field(col: str) -> html.Div:
         options = [{"label": label, "value": value} for value, label in option_map.items()]
         first_value = list(option_map.keys())[0]
         control = dcc.Dropdown(
-            id=f"{col}Input",
+            id=f"{px}_{col}Input",
             options=options,
             value=first_value,
             clearable=False,
@@ -429,7 +492,7 @@ def build_field(col: str) -> html.Div:
     elif col in categoricalColumns:
         options = [{"label": v, "value": v} for v in categoryMaps[col]]
         control = dcc.Dropdown(
-            id=f"{col}Input",
+            id=f"{px}_{col}Input",
             options=options,
             value=categoryMaps[col][0] if categoryMaps[col] else None,
             clearable=False,
@@ -457,17 +520,17 @@ def build_field(col: str) -> html.Div:
             ]
 
         control = dcc.RadioItems(
-            id=f"{col}Input",
+            id=f"{px}_{col}Input",
             options=binary_options,
             value=default_value if default_value in (0, 1) else 0,
             inline=True,
             style={"marginTop": "4px"},
         )
 
-    elif is_binary_numeric_column(col):
+    elif is_binary_numeric_column(col, categoricalColumns, sliderBounds):
         bounds = sliderBounds.get(col, {"min": 0.0, "max": 1.0})
         lo_b, hi_b = float(bounds["min"]), float(bounds["max"])
-        raw_bin = _numeric_median_default(col, lo_b, hi_b)
+        raw_bin = _numeric_median_default(col, lo_b, hi_b, featureQuantiles)
         try:
             bin_v = int(round(float(raw_bin)))
         except (TypeError, ValueError):
@@ -475,7 +538,7 @@ def build_field(col: str) -> html.Div:
         if bin_v not in (0, 1):
             bin_v = 0
         control = dcc.RadioItems(
-            id=f"{col}Input",
+            id=f"{px}_{col}Input",
             options=[
                 {"label": "No", "value": 0},
                 {"label": "Yes", "value": 1},
@@ -487,7 +550,7 @@ def build_field(col: str) -> html.Div:
     elif k == "bmi":
         bounds = sliderBounds.get(col, {"min": 19.0, "max": 54.0})
         lo, hi = float(bounds["min"]), float(bounds["max"])
-        raw_med = _numeric_median_default(col, lo, hi)
+        raw_med = _numeric_median_default(col, lo, hi, featureQuantiles)
         try:
             med = float(raw_med)
         except (TypeError, ValueError):
@@ -500,7 +563,7 @@ def build_field(col: str) -> html.Div:
         control = html.Div(
             [
                 dcc.RadioItems(
-                    id="bmiEntryModeInput",
+                    id=f"{px}_bmiEntryModeInput",
                     options=[
                         {"label": "Slider", "value": "slider"},
                         {"label": "Calculator (kg & m)", "value": "calculator"},
@@ -510,7 +573,7 @@ def build_field(col: str) -> html.Div:
                     style={"marginBottom": "10px"},
                 ),
                 html.Div(
-                    id="bmiCalcRow",
+                    id=f"{px}_bmiCalcRow",
                     style={"display": "none", "marginTop": "8px"},
                     children=[
                         html.Div(
@@ -520,7 +583,7 @@ def build_field(col: str) -> html.Div:
                                     [
                                         html.Label("Weight (kg)", style={"fontSize": "12px"}),
                                         dcc.Input(
-                                            id="bmiCalcWeightKg",
+                                            id=f"{px}_bmiCalcWeightKg",
                                             type="number",
                                             step="any",
                                             placeholder="e.g. 80",
@@ -533,7 +596,7 @@ def build_field(col: str) -> html.Div:
                                     [
                                         html.Label("Height (m)", style={"fontSize": "12px"}),
                                         dcc.Input(
-                                            id="bmiCalcHeightM",
+                                            id=f"{px}_bmiCalcHeightM",
                                             type="number",
                                             step="any",
                                             placeholder="e.g. 1.75",
@@ -544,7 +607,7 @@ def build_field(col: str) -> html.Div:
                                 ),
                                 html.Button(
                                     "Apply BMI",
-                                    id="bmiCalcApply",
+                                    id=f"{px}_bmiCalcApply",
                                     n_clicks=0,
                                     type="button",
                                     style={
@@ -560,7 +623,7 @@ def build_field(col: str) -> html.Div:
                     ],
                 ),
                 html.Div(
-                    id="bmiSliderRow",
+                    id=f"{px}_bmiSliderRow",
                     style={"display": "block"},
                     children=[
                         html.P(
@@ -577,7 +640,7 @@ def build_field(col: str) -> html.Div:
                             },
                             children=[
                                 dcc.Input(
-                                    id=f"{col}Input",
+                                    id=f"{px}_{col}Input",
                                     type="text",
                                     inputMode="numeric",
                                     debounce=True,
@@ -594,7 +657,7 @@ def build_field(col: str) -> html.Div:
                                     style={"flex": "1", "minWidth": "120px"},
                                     children=[
                                         dcc.Slider(
-                                            id="bmiSlider",
+                                            id=f"{px}_bmiSlider",
                                             min=lo,
                                             max=hi,
                                             step=step,
@@ -614,7 +677,7 @@ def build_field(col: str) -> html.Div:
     else:
         bounds = sliderBounds.get(col, {"min": 0.0, "max": 100.0})
         lo, hi = float(bounds["min"]), float(bounds["max"])
-        raw_med = _numeric_median_default(col, lo, hi)
+        raw_med = _numeric_median_default(col, lo, hi, featureQuantiles)
         try:
             med = float(raw_med)
         except (TypeError, ValueError):
@@ -635,7 +698,7 @@ def build_field(col: str) -> html.Div:
             },
             children=[
                 dcc.Input(
-                    id=f"{col}Input",
+                    id=f"{px}_{col}Input",
                     type="text",
                     inputMode="numeric",
                     debounce=True,
@@ -652,7 +715,7 @@ def build_field(col: str) -> html.Div:
                     style={"flex": "1", "minWidth": "120px"},
                     children=[
                         dcc.Slider(
-                            id=f"{col}Slider",
+                            id=f"{px}_{col}Slider",
                             min=lo,
                             max=hi,
                             step=step,
@@ -677,11 +740,11 @@ def build_field(col: str) -> html.Div:
     )
 
 
-def section_block(title: str, subtitle: str, columns: list) -> html.Div:
+def section_block(title: str, subtitle: str, columns: list, panel: dict) -> html.Div:
     if not columns:
         return html.Div()
-    cells = [build_field(c) for c in columns]
-    help_line = SECTION_HELP.get(title, "")
+    cells = [build_field(c, panel) for c in columns]
+    help_line = section_help_line(title, panel)
     return html.Div(
         [
             html.H2(title, style=SECTION_TITLE, title=help_line or None),
@@ -691,42 +754,115 @@ def section_block(title: str, subtitle: str, columns: list) -> html.Div:
     )
 
 
-def order_columns_for_sections() -> dict:
-    buckets = {
-        "Demographics": [],
-        "Positive influences": [],
-        "Negative influences": [],
-        "Other clinical indicators": [],
-    }
-    for col in featureColumns:
-        buckets[assign_section(col)].append(col)
+def order_columns_for_sections(panel: dict) -> dict:
+    if panel["prefix"] == "hd":
+        buckets = {
+            "Demographics": [],
+            "Resting presentation": [],
+            "Exercise stress": [],
+            "Catheterisation / imaging": [],
+        }
+    else:
+        buckets = {
+            "Demographics": [],
+            "Positive influences": [],
+            "Negative influences": [],
+            "Other clinical indicators": [],
+        }
+    for col in panel["featureColumns"]:
+        buckets[assign_section(col, panel)].append(col)
     return buckets
 
 
-buckets = order_columns_for_sections()
+def make_section_layout(panel: dict) -> list:
+    buckets = order_columns_for_sections(panel)
+    defs = _HEART_SECTION_DEFS if panel["prefix"] == "hd" else _DIABETES_SECTION_DEFS
+    return [
+        section_block(title, subtitle, buckets[title], panel)
+        for title, subtitle in defs
+        if buckets.get(title)
+    ]
 
-section_layout = [
-    section_block(
-        "Demographics",
-        "Basic information and background (including age and profile dropdowns).",
-        buckets["Demographics"],
-    ),
-    section_block(
-        "Positive influences",
-        "Factors that typically support lower risk when they are in a healthy range.",
-        buckets["Positive influences"],
-    ),
-    section_block(
-        "Negative influences",
-        "Lifestyle and clinical markers that often track with higher risk when out of range.",
-        buckets["Negative influences"],
-    ),
-    section_block(
-        "Other clinical indicators",
-        "Additional fields used by the model.",
-        buckets["Other clinical indicators"],
-    ),
-]
+
+def build_decision_tab_children(panel: dict) -> list:
+    px = panel["prefix"]
+    btn_style = {
+        "width": "100%",
+        "padding": "14px",
+        "marginTop": "28px",
+        "backgroundColor": "#4a148c",
+        "color": "white",
+        "border": "none",
+        "borderRadius": "0",
+        "fontSize": "16px",
+        "cursor": "pointer",
+        "fontWeight": "bold",
+    }
+    return [
+        html.H1(
+            panel["page_title"],
+            style={
+                "textAlign": "center",
+                "color": "#111",
+                "marginBottom": "10px",
+                "fontSize": "26px",
+            },
+        ),
+        html.P(
+            panel["page_intro"],
+            style={"textAlign": "center", "marginBottom": "20px", "fontWeight": "600"},
+        ),
+        *make_section_layout(panel),
+        html.Button(
+            "Predict",
+            id=f"{px}_predictButton",
+            n_clicks=0,
+            style=btn_style,
+        ),
+    ]
+
+
+def build_modal(panel: dict) -> html.Div:
+    px = panel["prefix"]
+    return html.Div(
+        id=f"{px}_modalBackdrop",
+        style={**MODAL_BACKDROP_BASE, "display": "none"},
+        children=[
+            html.Div(
+                style=MODAL_PANEL,
+                children=[
+                    html.Div(
+                        style={
+                            "display": "flex",
+                            "justifyContent": "space-between",
+                            "alignItems": "center",
+                            "marginBottom": "16px",
+                        },
+                        children=[
+                            html.H3(
+                                "Results",
+                                style={"margin": 0, "fontSize": "20px"},
+                            ),
+                            html.Button(
+                                "Close",
+                                id=f"{px}_modalClose",
+                                n_clicks=0,
+                                style={
+                                    "padding": "8px 16px",
+                                    "border": "1px solid #333",
+                                    "background": "#fff",
+                                    "cursor": "pointer",
+                                    "borderRadius": "0",
+                                    "fontWeight": "600",
+                                },
+                            ),
+                        ],
+                    ),
+                    html.Div(id=f"{px}_resultsModalBody"),
+                ],
+            )
+        ],
+    )
 
 
 def _notebook_gallery_items() -> list[dict]:
@@ -739,84 +875,29 @@ def _notebook_gallery_items() -> list[dict]:
     return data if isinstance(data, list) else []
 
 
-dash_app = dash.Dash(__name__)
+dash_app = dash.Dash(__name__, suppress_callback_exceptions=True)
 server = dash_app.server
 
-_decision_support_children = [
-    html.H1(
-        "Heart Disease Risk Decision Support System",
-        style={
-            "textAlign": "center",
-            "color": "#111",
-            "marginBottom": "10px",
-            "fontSize": "26px",
-        },
-    ),
-    html.P(
-        "Enter patient information, then press Predict to see heart disease risk prediction and guidance. "
-        "Tip: hover field labels for more information.",
-        style={"textAlign": "center", "marginBottom": "20px", "fontWeight": "600"},
-    ),
-    *section_layout,
-    html.Button(
-        "Predict",
-        id="predictButton",
-        n_clicks=0,
-        style={
-            "width": "100%",
-            "padding": "14px",
-            "marginTop": "28px",
-            "backgroundColor": "#4a148c",
-            "color": "white",
-            "border": "none",
-            "borderRadius": "0",
-            "fontSize": "16px",
-            "cursor": "pointer",
-            "fontWeight": "bold",
-        },
-    ),
-]
-
-# Modal lives outside dcc.Tabs so it stays mounted and callbacks work when switching tabs.
-_modal_layer = html.Div(
-    id="modalBackdrop",
-    style={**MODAL_BACKDROP_BASE, "display": "none"},
-    children=[
-        html.Div(
-            style=MODAL_PANEL,
-            children=[
-                html.Div(
-                    style={
-                        "display": "flex",
-                        "justifyContent": "space-between",
-                        "alignItems": "center",
-                        "marginBottom": "16px",
-                    },
-                    children=[
-                        html.H3(
-                            "Results",
-                            style={"margin": 0, "fontSize": "20px"},
-                        ),
-                        html.Button(
-                            "Close",
-                            id="modalClose",
-                            n_clicks=0,
-                            style={
-                                "padding": "8px 16px",
-                                "border": "1px solid #333",
-                                "background": "#fff",
-                                "cursor": "pointer",
-                                "borderRadius": "0",
-                                "fontWeight": "600",
-                            },
-                        ),
-                    ],
-                ),
-                html.Div(id="resultsModalBody"),
-            ],
-        )
-    ],
+_default_main_tab = (
+    "tab-db"
+    if any(p["prefix"] == "db" for p in PANELS)
+    else f"tab-{PANELS[0]['prefix']}"
 )
+
+_decision_model_tabs = []
+for p in PANELS:
+    _tab_label = "Diabetes lifestyle" if p["prefix"] == "db" else "Heart disease (Statlog)"
+    _decision_model_tabs.append(
+        dcc.Tab(
+            label=_tab_label,
+            value=f"tab-{p['prefix']}",
+            style={"padding": "10px 14px", "fontWeight": "600"},
+            selected_style={"padding": "10px 14px", "fontWeight": "700"},
+            children=[html.Div(style=SHARP_CARD, children=build_decision_tab_children(p))],
+        )
+    )
+
+_modal_layer = html.Div(children=[build_modal(p) for p in PANELS])
 
 _gallery_items = _notebook_gallery_items()
 _notebook_gallery_children: list = [
@@ -890,7 +971,7 @@ dash_app.layout = html.Div(
             children=[
         dcc.Tabs(
             id="appMainTabs",
-            value="tab-decision",
+            value=_default_main_tab,
             persistence=True,
             persistence_type="session",
             colors={
@@ -900,15 +981,7 @@ dash_app.layout = html.Div(
             },
             style={"marginBottom": "4px"},
             children=[
-                dcc.Tab(
-                    label="Decision support",
-                    value="tab-decision",
-                    style={"padding": "10px 14px", "fontWeight": "600"},
-                    selected_style={"padding": "10px 14px", "fontWeight": "700"},
-                    children=[
-                        html.Div(style=SHARP_CARD, children=_decision_support_children),
-                    ],
-                ),
+                *_decision_model_tabs,
                 dcc.Tab(
                     label="Notebook figures",
                     value="tab-notebook",
@@ -925,9 +998,6 @@ dash_app.layout = html.Div(
         ),
     ],
 )
-
-stateInputs = [State(f"{col}Input", "value") for col in featureColumns]
-
 
 def _parse_clamped_numeric(value, lo: float, hi: float) -> float:
     if value is None:
@@ -961,8 +1031,12 @@ def try_parse_optional_float(text) -> Optional[float]:
         return None
 
 
-def collect_input_frame(values):
+def collect_input_frame(values, panel: dict):
     input_data = {}
+    featureColumns = panel["featureColumns"]
+    categoricalColumns = panel["categoricalColumns"]
+    categoryMaps = panel["categoryMaps"]
+    sliderBounds = panel["sliderBounds"]
 
     for col, value in zip(featureColumns, values):
         if is_forced_dropdown_column(col):
@@ -985,7 +1059,7 @@ def collect_input_frame(values):
                 iv = 0
             input_data[col] = 0 if iv not in (0, 1) else iv
 
-        elif is_binary_numeric_column(col):
+        elif is_binary_numeric_column(col, categoricalColumns, sliderBounds):
             try:
                 iv = int(value)
             except (TypeError, ValueError):
@@ -1000,81 +1074,86 @@ def collect_input_frame(values):
     return pd.DataFrame([input_data], columns=featureColumns)
 
 
-BMI_COL = next((c for c in featureColumns if col_key(c) == "bmi"), None)
-NUMERIC_SLIDER_SYNC_COLS = numeric_columns_with_slider_input()
+for _panel in PANELS:
+    _px = _panel["prefix"]
+    _slider_bounds = _panel["sliderBounds"]
+    for _sync_col in numeric_columns_with_slider_input(_panel):
+        if col_key(_sync_col) == "bmi":
+            continue
 
-for _sync_col in NUMERIC_SLIDER_SYNC_COLS:
-    if col_key(_sync_col) == "bmi":
-        continue
+        def _make_slider_pusher(c, px=_px, sb=_slider_bounds):
+            lo = float(sb[c]["min"])
+            hi = float(sb[c]["max"])
 
-    def _make_slider_pusher(c):
-        lo = float(sliderBounds[c]["min"])
-        hi = float(sliderBounds[c]["max"])
-
-        def _slider_to_text(sv, text_in):
-            try:
-                s_num = float(sv)
-            except (TypeError, ValueError):
-                return no_update
-            try:
-                t_num = _parse_clamped_numeric(text_in, lo, hi)
-                if abs(t_num - s_num) < 1e-8:
+            def _slider_to_text(sv, text_in):
+                try:
+                    s_num = float(sv)
+                except (TypeError, ValueError):
                     return no_update
-            except (TypeError, ValueError):
-                pass
-            return slider_value_as_display_text(sv)
+                try:
+                    t_num = _parse_clamped_numeric(text_in, lo, hi)
+                    if abs(t_num - s_num) < 1e-8:
+                        return no_update
+                except (TypeError, ValueError):
+                    pass
+                return slider_value_as_display_text(sv)
 
-        dash_app.callback(
-            Output(f"{c}Input", "value", allow_duplicate=True),
-            Input(f"{c}Slider", "value"),
-            State(f"{c}Input", "value"),
-            prevent_initial_call="initial_duplicate",
-        )(_slider_to_text)
+            dash_app.callback(
+                Output(f"{px}_{c}Input", "value", allow_duplicate=True),
+                Input(f"{px}_{c}Slider", "value"),
+                State(f"{px}_{c}Input", "value"),
+                prevent_initial_call="initial_duplicate",
+            )(_slider_to_text)
 
-    def _make_input_puller(c):
-        lo = float(sliderBounds[c]["min"])
-        hi = float(sliderBounds[c]["max"])
+        def _make_input_puller(c, px=_px, sb=_slider_bounds):
+            lo = float(sb[c]["min"])
+            hi = float(sb[c]["max"])
 
-        def _text_to_slider(txt, sl_cur):
-            raw = try_parse_optional_float(txt)
-            if raw is None:
-                raise PreventUpdate
-            v = max(lo, min(hi, raw))
-            try:
-                sc = float(sl_cur)
-            except (TypeError, ValueError):
-                sc = None
-            if sc is not None and abs(float(v) - sc) < 1e-8:
-                raise PreventUpdate
-            return float(v)
+            def _text_to_slider(txt, sl_cur):
+                raw = try_parse_optional_float(txt)
+                if raw is None:
+                    raise PreventUpdate
+                v = max(lo, min(hi, raw))
+                try:
+                    sc = float(sl_cur)
+                except (TypeError, ValueError):
+                    sc = None
+                if sc is not None and abs(float(v) - sc) < 1e-8:
+                    raise PreventUpdate
+                return float(v)
 
-        dash_app.callback(
-            Output(f"{c}Slider", "value", allow_duplicate=True),
-            Input(f"{c}Input", "value"),
-            State(f"{c}Slider", "value"),
-            prevent_initial_call=True,
-        )(_text_to_slider)
+            dash_app.callback(
+                Output(f"{px}_{c}Slider", "value", allow_duplicate=True),
+                Input(f"{px}_{c}Input", "value"),
+                State(f"{px}_{c}Slider", "value"),
+                prevent_initial_call=True,
+            )(_text_to_slider)
 
-    _make_slider_pusher(_sync_col)
-    _make_input_puller(_sync_col)
+        _make_slider_pusher(_sync_col)
+        _make_input_puller(_sync_col)
 
-if BMI_COL:
-    _bmi_lo = float(sliderBounds.get(BMI_COL, {"min": 19.0, "max": 54.0})["min"])
-    _bmi_hi = float(sliderBounds.get(BMI_COL, {"min": 19.0, "max": 54.0})["max"])
+for _panel in PANELS:
+    _px = _panel["prefix"]
+    _sb = _panel["sliderBounds"]
+    _bmi_col = next((c for c in _panel["featureColumns"] if col_key(c) == "bmi"), None)
+    if not _bmi_col:
+        continue
+    _bmi_lo = float(_sb.get(_bmi_col, {"min": 19.0, "max": 54.0})["min"])
+    _bmi_hi = float(_sb.get(_bmi_col, {"min": 19.0, "max": 54.0})["max"])
 
     @dash_app.callback(
-        Output(f"{BMI_COL}Input", "value", allow_duplicate=True),
-        Input("bmiSlider", "value"),
-        State(f"{BMI_COL}Input", "value"),
+        Output(f"{_px}_{_bmi_col}Input", "value", allow_duplicate=True),
+        Input(f"{_px}_bmiSlider", "value"),
+        State(f"{_px}_{_bmi_col}Input", "value"),
         prevent_initial_call="initial_duplicate",
     )
-    def _push_bmi_slider(sv, text_in):
+    def _push_bmi_slider(sv, text_in, lo=_bmi_lo, hi=_bmi_hi):
         try:
             s_num = float(sv)
         except (TypeError, ValueError):
             return no_update
         try:
-            t_num = _parse_clamped_numeric(text_in, _bmi_lo, _bmi_hi)
+            t_num = _parse_clamped_numeric(text_in, lo, hi)
             if abs(t_num - s_num) < 1e-8:
                 return no_update
         except (TypeError, ValueError):
@@ -1082,16 +1161,16 @@ if BMI_COL:
         return slider_value_as_display_text(sv)
 
     @dash_app.callback(
-        Output("bmiSlider", "value", allow_duplicate=True),
-        Input(f"{BMI_COL}Input", "value"),
-        State("bmiSlider", "value"),
+        Output(f"{_px}_bmiSlider", "value", allow_duplicate=True),
+        Input(f"{_px}_{_bmi_col}Input", "value"),
+        State(f"{_px}_bmiSlider", "value"),
         prevent_initial_call=True,
     )
-    def _pull_bmi_text_to_slider(txt, sl_cur):
+    def _pull_bmi_text_to_slider(txt, sl_cur, lo=_bmi_lo, hi=_bmi_hi):
         raw = try_parse_optional_float(txt)
         if raw is None:
             raise PreventUpdate
-        v = max(_bmi_lo, min(_bmi_hi, raw))
+        v = max(lo, min(hi, raw))
         try:
             sc = float(sl_cur)
         except (TypeError, ValueError):
@@ -1101,9 +1180,9 @@ if BMI_COL:
         return float(v)
 
     @dash_app.callback(
-        Output("bmiSliderRow", "style"),
-        Output("bmiCalcRow", "style"),
-        Input("bmiEntryModeInput", "value"),
+        Output(f"{_px}_bmiSliderRow", "style"),
+        Output(f"{_px}_bmiCalcRow", "style"),
+        Input(f"{_px}_bmiEntryModeInput", "value"),
     )
     def _toggle_bmi_rows(mode):
         if mode == "calculator":
@@ -1111,13 +1190,13 @@ if BMI_COL:
         return {"display": "block"}, {"display": "none", "marginTop": "8px"}
 
     @dash_app.callback(
-        Output(f"{BMI_COL}Input", "value", allow_duplicate=True),
-        Input("bmiCalcApply", "n_clicks"),
-        State("bmiCalcWeightKg", "value"),
-        State("bmiCalcHeightM", "value"),
+        Output(f"{_px}_{_bmi_col}Input", "value", allow_duplicate=True),
+        Input(f"{_px}_bmiCalcApply", "n_clicks"),
+        State(f"{_px}_bmiCalcWeightKg", "value"),
+        State(f"{_px}_bmiCalcHeightM", "value"),
         prevent_initial_call=True,
     )
-    def _apply_bmi_from_calc(n_clicks, w_kg, h_m):
+    def _apply_bmi_from_calc(n_clicks, w_kg, h_m, sb=_sb, col=_bmi_col):
         if not n_clicks:
             raise PreventUpdate
         try:
@@ -1128,16 +1207,19 @@ if BMI_COL:
         if h <= 0 or w <= 0:
             raise PreventUpdate
         bmi = w / (h**2)
-        lo = float(sliderBounds.get(BMI_COL, {"min": 19.0, "max": 54.0})["min"])
-        hi = float(sliderBounds.get(BMI_COL, {"min": 19.0, "max": 54.0})["max"])
+        lo = float(sb.get(col, {"min": 19.0, "max": 54.0})["min"])
+        hi = float(sb.get(col, {"min": 19.0, "max": 54.0})["max"])
         bmi = max(lo, min(hi, bmi))
         return slider_value_as_display_text(bmi)
 
 
-def shap_top_features(input_frame: pd.DataFrame, k: int = 3):
+def shap_top_features(input_frame: pd.DataFrame, panel: dict, k: int = 3):
+    model = panel["model"]
+    featureColumns = panel["featureColumns"]
+    featureQuantiles = panel["featureQuantiles"]
+    worstStageIndex = panel["worstStageIndex"]
+
     if not _ENABLE_SHAP:
-        # Low-memory fallback: approximate "drivers" from model feature importance
-        # weighted by how far the current input is from training median.
         try:
             importances = np.asarray(getattr(model, "feature_importances_", []), dtype=np.float64)
         except Exception:
@@ -1173,7 +1255,7 @@ def shap_top_features(input_frame: pd.DataFrame, k: int = 3):
                 if len(top) >= k:
                     break
         return scores, top[:k]
-    explainer = get_explainer()
+    explainer = get_explainer(panel)
     if explainer is None:
         return None, []
     import shap
@@ -1185,7 +1267,6 @@ def shap_top_features(input_frame: pd.DataFrame, k: int = 3):
         return None, []
     arr = np.asarray(sv)
     if arr.ndim == 3:
-        # (n_samples, n_features, n_classes)
         phi = arr[0, :, worstStageIndex].ravel()
     elif isinstance(sv, list):
         arr2 = np.asarray(sv[worstStageIndex])
@@ -1222,12 +1303,14 @@ def render_emphasis_paragraph(text: str, extra_style=None):
     return html.P(text, style=style)
 
 
-def advice_lines_for_features(features: list) -> list:
+def advice_lines_for_features(features: list, panel: dict) -> list:
+    cc = panel["categoricalColumns"]
+    sb = panel["sliderBounds"]
     lines = []
     for name in features:
         friendly = friendly_feature_label(name)
         d = feature_direction(name)
-        if name in categoricalColumns or is_binary_numeric_column(name):
+        if name in cc or is_binary_numeric_column(name, cc, sb):
             lines.append(
                 f"Reviewing **{friendly}** with your care team can help reduce your risk."
             )
@@ -1238,7 +1321,10 @@ def advice_lines_for_features(features: list) -> list:
     return lines
 
 
-def weakest_healthy_feature(input_data: dict):
+def weakest_healthy_feature(input_data: dict, panel: dict):
+    featureColumns = panel["featureColumns"]
+    categoricalColumns = panel["categoricalColumns"]
+    featureQuantiles = panel["featureQuantiles"]
     best_col = None
     best_margin = None
     for col in featureColumns:
@@ -1264,137 +1350,151 @@ def weakest_healthy_feature(input_data: dict):
     return best_col
 
 
-@dash_app.callback(
-    Output("modalBackdrop", "style"),
-    Output("resultsModalBody", "children"),
-    Input("predictButton", "n_clicks"),
-    stateInputs,
-)
-def on_predict(n_clicks, *values):
-    hidden = {**MODAL_BACKDROP_BASE, "display": "none"}
-    if n_clicks is None or n_clicks == 0:
-        return hidden, None
+def _register_predict_callback(panel: dict):
+    px = panel["prefix"]
+    states = [State(f"{px}_{c}Input", "value") for c in panel["featureColumns"]]
 
-    try:
-        input_frame = collect_input_frame(values)
-        input_dict = input_frame.iloc[0].to_dict()
-        pred_code = int(model.predict(input_frame)[0])
-        pred_label = targetMap[pred_code]
-    except Exception as exc:
-        err_visible = {**MODAL_BACKDROP_BASE, "display": "flex"}
-        return err_visible, html.Div(
-            [
-                html.P(
-                    "Prediction could not be completed. Check inputs and try again.",
-                    style={"color": "#b71c1c", "marginBottom": "8px"},
-                ),
-                html.P(str(exc), style={"fontSize": "12px", "color": "#555"}),
-            ]
-        )
-    proba = None
-    try:
-        proba_row = model.predict_proba(input_frame)[0]
-        proba = float(proba_row[worstStageIndex])
-    except Exception:
-        pass
-
-    worst_label = targetMap[worstStageIndex]
-    phi, top_names = shap_top_features(input_frame)
-    top_names = list(top_names or [])
-    shap_failed = phi is None or len(top_names) == 0
-
-    bullets = []
-    if not shap_failed:
-        for fname in top_names[:3]:
-            bullets.append(
-                html.Li(friendly_feature_label(fname), style={"marginBottom": "6px"})
-            )
-
-    advice = advice_lines_for_features(top_names[:3]) if top_names else []
-    weakest = weakest_healthy_feature(input_dict)
-    weak_sentence = ""
-    if weakest:
-        wf = friendly_feature_label(weakest)
-        if feature_direction(weakest) == "higher_better":
-            weak_sentence = f"Improving on **{wf}** could help reduce your risk."
-        else:
-            weak_sentence = (
-                f"Improving **{wf}** (keeping it well inside the healthy range) "
-                "could help reduce your risk."
-            )
-
-    body_children = [
-        html.P(
-            [
-                html.Strong("Predicted heart disease class: "),
-                html.Span(pred_label, style={"color": "#1b5e20"}),
-            ],
-            style={"fontSize": "18px", "marginBottom": "12px"},
-        ),
-    ]
-    if proba is not None:
-        body_children.append(
-            html.P(
-                f"Estimated probability of the highest-risk stage in this model "
-                f"({worst_label}): {proba * 100:.1f}%.",
-                style={"fontSize": "14px", "color": "#333", "marginBottom": "16px"},
-            )
-        )
-
-    if shap_failed:
-        shap_msg = (
-            "Detailed drivers are temporarily unavailable. "
-            "If this persists, verify artifacts were rebuilt with "
-            "`python SRC/prepare_data.py && python SRC/train.py`."
-        )
-        body_children.append(
-            html.P(
-                shap_msg,
-                style={"color": "#b71c1c"},
-            )
-        )
-    else:
-        body_children.extend(
-            [
-                html.H4(
-                    "Highest-impact inputs to review",
-                    style={"marginTop": "8px", "marginBottom": "8px"},
-                ),
-                html.Ul(bullets, style={"paddingLeft": "20px"}),
-                html.H4(
-                    "What you can do",
-                    style={"marginTop": "16px", "marginBottom": "8px"},
-                ),
-            ]
-        )
-        for line in advice:
-            body_children.append(render_emphasis_paragraph(line))
-
-    if weak_sentence:
-        body_children.append(render_emphasis_paragraph(weak_sentence, {"marginTop": "12px", "marginBottom": "0"}))
-
-    body_children.append(
-        html.P(
-            "This tool supports decisions and does not replace medical advice.",
-            style={"fontSize": "12px", "color": "#666", "marginTop": "20px"},
-        )
+    @dash_app.callback(
+        Output(f"{px}_modalBackdrop", "style"),
+        Output(f"{px}_resultsModalBody", "children"),
+        Input(f"{px}_predictButton", "n_clicks"),
+        states,
     )
+    def on_predict(n_clicks, *values):
+        hidden = {**MODAL_BACKDROP_BASE, "display": "none"}
+        if n_clicks is None or n_clicks == 0:
+            return hidden, None
 
-    visible = {**MODAL_BACKDROP_BASE, "display": "flex"}
-    return visible, html.Div(body_children)
+        try:
+            input_frame = collect_input_frame(values, panel)
+            input_dict = input_frame.iloc[0].to_dict()
+            pred_code = int(panel["model"].predict(input_frame)[0])
+            pred_label = panel["targetMap"][pred_code]
+        except Exception as exc:
+            err_visible = {**MODAL_BACKDROP_BASE, "display": "flex"}
+            return err_visible, html.Div(
+                [
+                    html.P(
+                        "Prediction could not be completed. Check inputs and try again.",
+                        style={"color": "#b71c1c", "marginBottom": "8px"},
+                    ),
+                    html.P(str(exc), style={"fontSize": "12px", "color": "#555"}),
+                ]
+            )
+        proba = None
+        try:
+            proba_row = panel["model"].predict_proba(input_frame)[0]
+            proba = float(proba_row[panel["worstStageIndex"]])
+        except Exception:
+            pass
+
+        worst_label = panel["targetMap"][panel["worstStageIndex"]]
+        phi, top_names = shap_top_features(input_frame, panel)
+        top_names = list(top_names or [])
+        shap_failed = phi is None or len(top_names) == 0
+
+        bullets = []
+        if not shap_failed:
+            for fname in top_names[:3]:
+                bullets.append(
+                    html.Li(friendly_feature_label(fname), style={"marginBottom": "6px"})
+                )
+
+        advice = advice_lines_for_features(top_names[:3], panel) if top_names else []
+        weakest = weakest_healthy_feature(input_dict, panel)
+        weak_sentence = ""
+        if weakest:
+            wf = friendly_feature_label(weakest)
+            if feature_direction(weakest) == "higher_better":
+                weak_sentence = f"Improving on **{wf}** could help reduce your risk."
+            else:
+                weak_sentence = (
+                    f"Improving **{wf}** (keeping it well inside the healthy range) "
+                    "could help reduce your risk."
+                )
+
+        body_children = [
+            html.P(
+                [
+                    html.Strong(f"{panel['pred_label']}: "),
+                    html.Span(str(pred_label), style={"color": "#1b5e20"}),
+                ],
+                style={"fontSize": "18px", "marginBottom": "12px"},
+            ),
+        ]
+        if proba is not None:
+            body_children.append(
+                html.P(
+                    f"Estimated probability of the highest-risk class in this model "
+                    f"({worst_label}): {proba * 100:.1f}%.",
+                    style={"fontSize": "14px", "color": "#333", "marginBottom": "16px"},
+                )
+            )
+
+        if shap_failed:
+            shap_msg = (
+                "Detailed drivers are temporarily unavailable. "
+                "Rebuild artifacts with prepare/train scripts if needed."
+            )
+            body_children.append(
+                html.P(
+                    shap_msg,
+                    style={"color": "#b71c1c"},
+                )
+            )
+        else:
+            body_children.extend(
+                [
+                    html.H4(
+                        "Highest-impact inputs to review",
+                        style={"marginTop": "8px", "marginBottom": "8px"},
+                    ),
+                    html.Ul(bullets, style={"paddingLeft": "20px"}),
+                    html.H4(
+                        "What you can do",
+                        style={"marginTop": "16px", "marginBottom": "8px"},
+                    ),
+                ]
+            )
+            for line in advice:
+                body_children.append(render_emphasis_paragraph(line))
+
+        if weak_sentence:
+            body_children.append(
+                render_emphasis_paragraph(weak_sentence, {"marginTop": "12px", "marginBottom": "0"})
+            )
+
+        body_children.append(
+            html.P(
+                "This tool supports decisions and does not replace medical advice.",
+                style={"fontSize": "12px", "color": "#666", "marginTop": "20px"},
+            )
+        )
+
+        visible = {**MODAL_BACKDROP_BASE, "display": "flex"}
+        return visible, html.Div(body_children)
 
 
-@dash_app.callback(
-    Output("modalBackdrop", "style", allow_duplicate=True),
-    Input("modalClose", "n_clicks"),
-    prevent_initial_call=True,
-)
-def close_modal(n):
-    if not n:
-        raise PreventUpdate
-    return {**MODAL_BACKDROP_BASE, "display": "none"}
+def _register_close_callback(panel: dict):
+    px = panel["prefix"]
+
+    @dash_app.callback(
+        Output(f"{px}_modalBackdrop", "style", allow_duplicate=True),
+        Input(f"{px}_modalClose", "n_clicks"),
+        prevent_initial_call=True,
+    )
+    def close_modal(n):
+        if not n:
+            raise PreventUpdate
+        return {**MODAL_BACKDROP_BASE, "display": "none"}
+
+
+for _p in PANELS:
+    _register_predict_callback(_p)
+    _register_close_callback(_p)
 
 
 if __name__ == "__main__":
     # use_reloader=False avoids a second Python process (Windows) and duplicate callback issues.
-    dash_app.run(debug=True, use_reloader=False, port=8051)
+    # threaded=True keeps the dev server responsive while a callback runs (e.g. SHAP).
+    dash_app.run(debug=True, use_reloader=False, threaded=True, port=8051)

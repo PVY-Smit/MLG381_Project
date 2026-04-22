@@ -44,16 +44,29 @@ def resolve_dataset_path() -> Path:
 
 # loading dataset
 df = pd.read_csv(resolve_dataset_path())
+df.columns = df.columns.str.strip()
 
 # cleaning column names
-nonFloat_col =["Age","Gender","Ethnicity","Education_level","Income_level","Employment_status","Smoking_status", "diabetes_stage"]
-float_col=[]
+nonFloat_col = [
+    "Age",
+    "Gender",
+    "Ethnicity",
+    "Education_level",
+    "Income_level",
+    "Employment_status",
+    "Smoking_status",
+    "diabetes_stage",
+]
+float_col = []
 for col in df.columns:
     if col not in nonFloat_col:
         float_col.append(col)
-
-df.columns = df.columns.str.strip()
-df = pd.concat([pd.DataFrame(RobustScaler.fit_transform(df.drop(columns=nonFloat_col)), columns=df.columns, index=df.index),df.drop(columns=float_col)],axis=1)
+_float_features = df.drop(columns=nonFloat_col)
+_scaled = RobustScaler().fit_transform(_float_features)
+scaled_df = pd.DataFrame(
+    _scaled, columns=_float_features.columns, index=df.index
+)
+df = pd.concat([scaled_df, df.drop(columns=float_col)], axis=1)
 
 
 # defining the target
